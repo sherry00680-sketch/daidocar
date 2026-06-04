@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>公司車輛多人智慧管理系統</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style>
+        body { font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800">
+
+    <nav class="bg-indigo-900 text-white shadow-md">
+        <div class="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">
+            <h1 class="text-lg font-bold tracking-wide">公司車輛智慧管理系統 (手機多人同步版)</h1>
+            <button onclick="fetchStatus()" class="text-xs bg-indigo-700 px-3 py-1 rounded-lg cursor-pointer">🔄 重新整理</button>
+        </div>
+    </nav>
+
+    <main class="max-w-4xl mx-auto px-4 py-6 space-y-8">
+        
+        <!-- 車輛卡片區 -->
+        <div id="loading-hint" class="text-center py-8 font-medium text-slate-500">正在與雲端資料庫同步中...</div>
+        <div id="car-container" class="grid grid-cols-1 md:grid-cols-2 gap-6 hidden"></div>
+
+        <!-- 歷史紀錄 -->
+        <section class="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
+            <div class="p-4 border-b border-slate-100"><h3 class="font-bold text-slate-700">最新調度動態 (前10筆)</h3></div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                    <thead>
+                        <tr class="bg-slate-50 text-slate-500 text-xs border-b border-slate-200">
+                            <th class="p-3">車輛</th>
+                            <th class="p-3">人員/動作</th>
+                            <th class="p-3">時間/里程</th>
+                            <th class="p-3 text-center">外觀存證</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-tbody" class="divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <!-- 出車彈窗 (精準名單下拉化) -->
+    <div id="checkout-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <h3 id="checkout-title" class="text-lg font-bold mb-4">登記出車</h3>
+            <div class="space-y-4">
+                <input type="hidden" id="checkout-plate"><input type="hidden" id="checkout-carname">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">駕駛同仁姓名 *</label>
+                    <select id="checkout-user" class="w-full p-2.5 bg-white border rounded-xl text-sm focus:outline-indigo-600">
+                        <option value="">-- 請選擇您的姓名 --</option>
+                        <option value="KAI">KAI</option>
+                        <option value="AF">AF</option>
+                        <option value="Julia">Julia</option>
+                        <option value="Stacey">Stacey</option>
+                        <option value="Fay">Fay</option>
+                        <option value="Sam">Sam</option>
+                        <option value="Iron">Iron</option>
+                        <option value="Ellie">Ellie</option>
+                        <option value="Sherry">Sherry</option>
+                        <option value="Monisha">Monisha</option>
+                        <option value="Dennis">Dennis</option>
+                        <option value="Steve">Steve</option>
+                    </select>
+                </div>
+                <div><label class="block text-xs font-bold text-slate-600 mb-1">出發里程數 (km) *</label><input type="number" id="checkout-mileage" class="w-full p-2 border rounded-xl text-sm font-mono focus:outline-indigo-600"></div>
+            </div>
+            <div class="mt-6 flex justify-end space-x-2"><button onclick="closeModal('checkout-modal')" class="px-4 py-2 text-sm text-slate-500 cursor-pointer">取消</button><button onclick="submitCheckout()" class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-xl cursor-pointer">確認出車</button></div>
+        </div>
+    </div>
+
+    <!-- 還車拍照彈窗 -->
+    <div id="return-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl my-8 p-6 space-y-4">
+            <h3 id="return-title" class="text-lg font-bold text-emerald-800">車輛歸還與四面外觀拍照</h3>
+            <input type="hidden" id="return-plate"><input type="hidden" id="return-carname"><input type="hidden" id="return-user">
+            
+            <div class="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border">
+                <div><label class="block text-xs font-bold text-slate-600 mb-1">還車總里程 (km) *</label><input type="number" id="return-mileage" class="w-full p-2 bg-white border rounded-xl text-sm font-mono focus:outline-emerald-600"></div>
+                <div><label class="block text-xs font-bold text-slate-600 mb-1">補給加油</label><select id="return-refuel" class="w-full p-2 bg-white border rounded-xl text-sm focus:outline-emerald-600"><option value="否">無</option><option value="是">有，已自行墊付</option></select></div>
+            </div>
+
+            <div>
+                <label class="block text-xs font-bold text-slate-700 mb-2">請圍繞車身拍攝 4 張照片防杜擦撞爭議 *</label>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div class="border rounded-xl p-2 text-center bg-slate-50 relative min-h-[90px] flex flex-col justify-center items-center overflow-hidden">
+                        <span class="text-[11px] text-slate-500 mb-1">1.車頭前方</span>
+                        <div id="prev-front" class="absolute inset-0 bg-cover bg-center rounded-xl hidden"></div>
+                        <label class="cursor-pointer bg-white border px-2 py-1 text-xs rounded-md shadow-xs z-10">拍攝<input type="file" accept="image/*" capture="environment" class="hidden" onchange="compressImg(this, 'front')"></label>
+                    </div>
+                    <div class="border rounded-xl p-2 text-center bg-slate-50 relative min-h-[90px] flex flex-col justify-center items-center overflow-hidden">
+                        <span class="text-[11px] text-slate-500 mb-1">2.車尾後方</span>
+                        <div id="prev-back" class="absolute inset-0 bg-cover bg-center rounded-xl hidden"></div>
+                        <label class="cursor-pointer bg-white border px-2 py-1 text-xs rounded-md shadow-xs z-10">拍攝<input type="file" accept="image/*" capture="environment" class="hidden" onchange="compressImg(this, 'back')"></label>
+                    </div>
+                    <div class="border rounded-xl p-2 text-center bg-slate-50 relative min-h-[90px] flex flex-col justify-center items-center overflow-hidden">
+                        <span class="text-[11px] text-slate-500 mb-1">3.車身左側</span>
+                        <div id="prev-left" class="absolute inset-0 bg-cover bg-center rounded-xl hidden"></div>
+                        <label class="cursor-pointer bg-white border px-2 py-1 text-xs rounded-md shadow-xs z-10">拍攝<input type="file" accept="image/*" capture="environment" class="hidden" onchange="compressImg(this, 'left')"></label>
+                    </div>
+                    <div class="border rounded-xl p-2 text-center bg-slate-50 relative min-h-[90px] flex flex-col justify-center items-center overflow-hidden">
+                        <span class="text-[11px] text-slate-500 mb-1">4.車身右側</span>
+                        <div id="prev-right" class="absolute inset-0 bg-cover bg-center rounded-xl hidden"></div>
+                        <label class="cursor-pointer bg-white border px-2 py-1 text-xs rounded-md shadow-xs z-10">拍攝<input type="file" accept="image/*" capture="environment" class="hidden" onchange="compressImg(this, 'right')"></label>
+                    </div>
+                </div>
+            </div>
+
+            <div><label class="block text-xs font-bold text-slate-600 mb-1">外觀異狀說明</label><textarea id="return-notes" rows="2" placeholder="若無請填寫「無」" class="w-full p-2 border rounded-xl text-sm focus:outline-emerald-600"></textarea></div>
+            <div class="flex justify-end space-x-2"><button onclick="closeModal('return-modal')" class="px-4 py-2 text-sm text-slate-500 cursor-pointer">取消</button><button onclick="submitReturn()" class="px-4 py-2 text-sm bg-emerald-600 text-white rounded-xl cursor-pointer">確認完整歸還</button></div>
+        </div>
+    </div>
+
+    <!-- 檢視照片大圖彈窗 -->
+    <div id="photo-modal" class="hidden fixed inset-0 bg-slate-900/80 flex items-center justify-center p-4 z-60">
+        <div class="bg-white rounded-2xl p-4 max-w-lg w-full space-y-4">
+            <h4 class="font-bold text-slate-700">歸還存證照片瀏覽</h4>
+            <div id="photo-loading" class="text-center py-6 text-slate-400">正在從雲端下載影像...</div>
+            <div id="photo-grid" class="grid grid-cols-2 gap-2 hidden">
+                <div class="aspect-square bg-slate-100 bg-cover bg-center rounded-lg" id="view-front"></div>
+                <div class="aspect-square bg-slate-100 bg-cover bg-center rounded-lg" id="view-back"></div>
+                <div class="aspect-square bg-slate-100 bg-cover bg-center rounded-lg" id="view-left"></div>
+                <div class="aspect-square bg-slate-100 bg-cover bg-center rounded-lg" id="view-right"></div>
+            </div>
+            <div class="text-right"><button onclick="closeModal('photo-modal')" class="bg-slate-800 text-white px-4 py-1.5 rounded-xl text-sm cursor-pointer">關閉</button></div>
+        </div>
+    </div>
+
+
+    <script>
+        // 🔗 您的 Google 雲端應用程式 API 網址
+        const API_URL = "https://script.google.com/macros/s/AKfycbz4cJjh7hdcIVDXapA23E7YlpoSEHVqiktSBzBxLx8YNM5fXBomw19V1DVwPyl4Hlnw/exec"; 
+
+        let globalCars = {};
+        let currentImages = { front:null, back:null, left:null, right:null };
+
+        async function fetchStatus() {
+            document.getElementById('loading-hint').classList.remove('hidden');
+            document.getElementById('car-container').classList.add('hidden');
+            try {
+                let res = await fetch(API_URL, { method: "POST", body: JSON.stringify({ action: "get_status" }) });
+                let data = await res.json();
+                globalCars = data.cars;
+                renderCars(data.cars);
+                renderHistory(data.logs);
+            } catch(e) { 
+                alert("雲端資料同步失敗，請確認 Apps Script 是否已設定權限為『任何人 (Anyone)』且已重新發佈部署。"); 
+            }
+            document.getElementById('loading-hint').classList.add('hidden');
+            document.getElementById('car-container').classList.remove('hidden');
+        }
+
+        function renderCars(cars) {
+            const container = document.getElementById('car-container');
+            container.innerHTML = Object.values(cars).map(car => {
+                const statusStr = car.status ? car.status.trim() : "";
+                const isOut = statusStr === "出車使用中";
+                
+                // 判斷是否為行政手動鎖定狀態（維修中、保養中等）
+                const isLocked = (statusStr === "維修中" || statusStr === "保養中");
+                
+                // 決定卡片邊框與狀態標籤顏色
+                let borderClass = "border-emerald-500";
+                let badgeClass = "bg-emerald-50 text-emerald-600";
+                if (isOut) {
+                    borderClass = "border-rose-500";
+                    badgeClass = "bg-rose-50 text-rose-600";
+                } else if (isLocked) {
+                    borderClass = "border-amber-500";
+                    badgeClass = "bg-amber-50 text-amber-600";
+                }
+
+                // 決定按電鈕文字與行為
+                let buttonHtml = "";
+                if (isOut) {
+                    buttonHtml = `<button onclick="actionBtn('${car.plate}')" class="w-full py-2.5 rounded-xl text-sm font-medium text-white shadow-xs cursor-pointer bg-slate-800 hover:bg-slate-900">返廠登記：進行拍照與歸還</button>`;
+                } else if (isLocked) {
+                    buttonHtml = `<button disabled class="w-full py-2.5 rounded-xl text-sm font-medium text-slate-400 bg-slate-200 cursor-not-allowed">車輛維修保養中 • 暫停預約</button>`;
+                } else {
+                    buttonHtml = `<button onclick="actionBtn('${car.plate}')" class="w-full py-2.5 rounded-xl text-sm font-medium text-white shadow-xs cursor-pointer bg-indigo-600 hover:bg-indigo-700">同仁出車登記</button>`;
+                }
+
+                return `
+                    <div class="bg-white rounded-2xl shadow-xs border-t-4 ${borderClass} p-5">
+                        <div class="flex justify-between items-start">
+                            <div><h3 class="font-bold text-lg">${car.name}</h3><p class="text-xs font-mono text-slate-400 mt-0.5">車牌：${car.plate}</p></div>
+                            <span class="text-xs px-2.5 py-0.5 rounded-full font-medium ${badgeClass}">${car.status}</span>
+                        </div>
+                        <div class="my-4 bg-slate-50 p-3 rounded-xl text-xs space-y-1 text-slate-600">
+                            <div>駕駛同仁：<span class="font-medium text-slate-800">${car.user}</span></div>
+                            <div>變更時間：<span>${car.time}</span></div>
+                            <div>當前儀表：<span>${car.mileage !== '-' ? car.mileage + ' km' : '-'}</span></div>
+                        </div>
+                        ${buttonHtml}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderHistory(logs) {
+            document.getElementById('history-tbody').innerHTML = logs.map(log => `
+                <tr class="hover:bg-slate-50/60 text-xs">
+                    <td class="p-3 font-bold">${log.plate}<br><span class="text-[10px] text-slate-400 font-normal">${log.name.split('(')[0]}</span></td>
+                    <td class="p-3"><span class="px-1.5 py-0.5 rounded font-medium ${log.type==='出車'?'bg-rose-50 text-rose-600':'bg-emerald-50 text-emerald-600'}">${log.type}</span><br><span class="text-slate-700 font-medium">${log.user}</span></td>
+                    <td class="p-3 text-[11px] text-slate-500">${log.time}<br>儀表: <span class="font-mono font-medium text-slate-700">${log.mileage} km</span></td>
+                    <td class="p-3 text-center">${log.type==='還車'?`<button onclick="viewPhotos('${log.id}')" class="text-xs text-indigo-600 font-semibold underline cursor-pointer">👀 檢視影像</button>`:'-'}</td>
+                </tr>
+            `).join('');
+        }
+
+        function actionBtn(plate) {
+            let car = globalCars[plate];
+            if(car.status !== "出車使用中") {
+                document.getElementById('checkout-plate').value = plate;
+                document.getElementById('checkout-carname').value = car.name;
+                document.getElementById('checkout-title').innerText = `【出車】${car.name}`;
+                document.getElementById('checkout-user').value = '';
+                document.getElementById('checkout-mileage').value = '';
+                openModal('checkout-modal');
+            } else {
+                document.getElementById('return-plate').value = plate;
+                document.getElementById('return-carname').value = car.name;
+                document.getElementById('return-user').value = car.user;
+                document.getElementById('return-title').innerText = `【還車外觀審查】${car.name}`;
+                document.getElementById('return-mileage').value = '';
+                document.getElementById('return-notes').value = '無異常。';
+                ['front','back','left','right'].forEach(s => {
+                    document.getElementById(`prev-${s}`).classList.add('hidden');
+                    currentImages[s] = null;
+                });
+                openModal('return-modal');
+            }
+        }
+
+        async function submitCheckout() {
+            let plate = document.getElementById('checkout-plate').value;
+            let name = document.getElementById('checkout-carname').value;
+            let user = document.getElementById('checkout-user').value;
+            let mileage = document.getElementById('checkout-mileage').value.trim();
+            if(!user || !mileage) return alert('請選取姓名並填寫出發里程！');
+
+            closeModal('checkout-modal');
+            document.getElementById('car-container').classList.add('hidden');
+            document.getElementById('loading-hint').classList.remove('hidden');
+
+            await fetch(API_URL, { method:"POST", body: JSON.stringify({
+                action: "checkout", plate: plate, name: name, user: user, mileage: mileage,
+                time: new Date().toLocaleString('zh-TW',{hour12:false})
+            })});
+            fetchStatus();
+        }
+
+        function compressImg(input, slot) {
+            let file = input.files[0];
+            if(!file) return;
+            let reader = new FileReader();
+            reader.onload = function(e) {
+                let img = new Image();
+                img.src = e.target.result;
+                img.onload = function() {
+                    let canvas = document.createElement('canvas');
+                    let ctx = canvas.getContext('2d');
+                    let max_w = 400; 
+                    let scale = max_w / img.width;
+                    canvas.width = max_w;
+                    canvas.height = img.height * scale;
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    
+                    let base64 = canvas.toDataURL('image/jpeg', 0.6); 
+                    currentImages[slot] = base64;
+                    let p = document.getElementById(`prev-${slot}`);
+                    p.style.backgroundImage = `url('${base64}')`;
+                    p.classList.remove('hidden');
+                }
+            }
+            reader.readAsDataURL(file);
+        }
+
+        async function submitReturn() {
+            let plate = document.getElementById('return-plate').value;
+            let name = document.getElementById('return-carname').value;
+            let user = document.getElementById('return-user').value;
+            let mileage = document.getElementById('return-mileage').value.trim();
+            let refuel = document.getElementById('return-refuel').value;
+            let notes = document.getElementById('return-notes').value.trim();
+
+            if(!mileage) return alert('請輸入還車里程！');
+            if(!currentImages.front || !currentImages.back || !currentImages.left || !currentImages.right) {
+                return alert('為了釐清車損責任，歸還時必須完整拍攝 4 個角度的照片！');
+            }
+
+            closeModal('return-modal');
+            document.getElementById('car-container').classList.add('hidden');
+            document.getElementById('loading-hint').classList.remove('hidden');
+            
+            await fetch(API_URL, { method:"POST", body: JSON.stringify({
+                action: "return", plate: plate, name: name, user: user, mileage: mileage,
+                refuel: refuel, notes: notes||"無異常", images: currentImages,
+                time: new Date().toLocaleString('zh-TW',{hour12:false})
+            })});
+            fetchStatus();
+        }
+
+        async function viewPhotos(logId) {
+            openModal('photo-modal');
+            document.getElementById('photo-loading').classList.remove('hidden');
+            document.getElementById('photo-grid').classList.add('hidden');
+            
+            let res = await fetch(API_URL, { method:"POST", body: JSON.stringify({ action:"get_photos", logId: logId }) });
+            let data = await res.json();
+            
+            if(data.images) {
+                ['front','back','left','right'].forEach(s => {
+                    document.getElementById(`view-${s}`).style.backgroundImage = `url('${data.images[s]}')`;
+                });
+                document.getElementById('photo-loading').classList.add("hidden");
+                document.getElementById('photo-grid').classList.remove('hidden');
+            } else {
+                alert("找不到該筆紀錄的照片。");
+                closeModal('photo-modal');
+            }
+        }
+
+        function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+        
+        window.onload = fetchStatus;
+    </script>
+</body>
+</html>
