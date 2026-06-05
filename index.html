@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>公司車輛多人智慧管理系統</title>
+    <title>日商泰道公司車輛管理系統</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <style>
         body { font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif; }
@@ -13,7 +13,7 @@
 
     <nav class="bg-indigo-900 text-white shadow-md">
         <div class="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">
-            <h1 class="text-lg font-bold tracking-wide">公司車輛智慧管理系統 (手機多人同步版)</h1>
+            <h1 class="text-lg font-bold tracking-wide">日商泰道公司車輛管理系統</h1>
             <button onclick="fetchStatus()" class="text-xs bg-indigo-700 px-3 py-1 rounded-lg cursor-pointer">🔄 重新整理</button>
         </div>
     </nav>
@@ -218,121 +218,3 @@
                 document.getElementById('return-title').innerText = `【還車外觀審查】${car.name}`;
                 document.getElementById('return-mileage').value = '';
                 document.getElementById('return-notes').value = '無異常。';
-                ['front','back','left','right'].forEach(s => {
-                    document.getElementById(`prev-${s}`).classList.add('hidden');
-                    currentImages[s] = null;
-                });
-                openModal('return-modal');
-            }
-        }
-
-        async function submitCheckout() {
-            let plate = document.getElementById('checkout-plate').value;
-            let name = document.getElementById('checkout-carname').value;
-            let user = document.getElementById('checkout-user').value;
-            let mileage = document.getElementById('checkout-mileage').value.trim();
-            if(!user || !mileage) return alert('請選取姓名並填寫出發里程！');
-
-            closeModal('checkout-modal');
-            document.getElementById('car-container').classList.add('hidden');
-            document.getElementById('loading-hint').classList.remove('hidden');
-
-            await fetch(API_URL, { method:"POST", body: JSON.stringify({
-                action: "checkout", plate: plate, name: name, user: user, mileage: mileage,
-                time: new Date().toLocaleString('zh-TW',{hour12:false})
-            })});
-            fetchStatus();
-        }
-
-        function compressImg(input, slot) {
-            let file = input.files[0];
-            if(!file) return;
-            let reader = new FileReader();
-            reader.onload = function(e) {
-                let img = new Image();
-                img.src = e.target.result;
-                img.onload = function() {
-                    let canvas = document.createElement('canvas');
-                    let ctx = canvas.getContext('2d');
-                    let max_w = 400; 
-                    let scale = max_w / img.width;
-                    canvas.width = max_w;
-                    canvas.height = img.height * scale;
-                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                    
-                    let base64 = canvas.toDataURL('image/jpeg', 0.6); 
-                    currentImages[slot] = base64;
-                    let p = document.getElementById(`prev-${slot}`);
-                    p.style.backgroundImage = `url('${base64}')`;
-                    p.classList.remove('hidden');
-                }
-            }
-            reader.readAsDataURL(file);
-        }
-
-        async function submitReturn() {
-            let plate = document.getElementById('return-plate').value;
-            let name = document.getElementById('return-carname').value;
-            let user = document.getElementById('return-user').value;
-            let mileage = document.getElementById('return-mileage').value.trim();
-            let refuel = document.getElementById('return-refuel').value;
-            let notes = document.getElementById('return-notes').value.trim();
-
-            if(!mileage) return alert('請輸入還車里程！');
-            
-            // 🛑 核心防呆：從全域資料讀取當初出車時的起始里程
-            let currentCar = globalCars[plate];
-            let startMileage = parseInt(currentCar.mileage);
-            let endMileage = parseInt(mileage);
-
-            if (isNaN(startMileage)) {
-                startMileage = 0; // 若資料庫無里程，防呆設為0
-            }
-
-            if (endMileage <= startMileage) {
-                return alert(`⚠️ 里程填寫錯誤！\n還車里程 (${endMileage} km) 必須大於出發時的起始里程 (${startMileage} km)。\n請重新確認車輛儀表板。`);
-            }
-
-            if(!currentImages.front || !currentImages.back || !currentImages.left || !currentImages.right) {
-                return alert('為了釐清車損責任，歸還時必須完整拍攝 4 個角度的照片！');
-            }
-
-            closeModal('return-modal');
-            document.getElementById('car-container').classList.add('hidden');
-            document.getElementById('loading-hint').classList.remove('hidden');
-            
-            await fetch(API_URL, { method:"POST", body: JSON.stringify({
-                action: "return", plate: plate, name: name, user: user, mileage: mileage,
-                refuel: refuel, notes: notes||"無異常", images: currentImages,
-                time: new Date().toLocaleString('zh-TW',{hour12:false})
-            })});
-            fetchStatus();
-        }
-
-        async function viewPhotos(logId) {
-            openModal('photo-modal');
-            document.getElementById('photo-loading').classList.remove('hidden');
-            document.getElementById('photo-grid').classList.add('hidden');
-            
-            let res = await fetch(API_URL, { method:"POST", body: JSON.stringify({ action:"get_photos", logId: logId }) });
-            let data = await res.json();
-            
-            if(data.images) {
-                ['front','back','left','right'].forEach(s => {
-                    document.getElementById(`view-${s}`).style.backgroundImage = `url('${data.images[s]}')`;
-                });
-                document.getElementById('photo-loading').classList.add("hidden");
-                document.getElementById('photo-grid').classList.remove('hidden');
-            } else {
-                alert("找不到該筆紀錄的照片。");
-                closeModal('photo-modal');
-            }
-        }
-
-        function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
-        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
-        
-        window.onload = fetchStatus;
-    </script>
-</body>
-</html>
