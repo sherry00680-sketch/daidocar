@@ -34,6 +34,8 @@
                             <th class="p-3">車輛</th>
                             <th class="p-3">人員/動作</th>
                             <th class="p-3">時間/里程</th>
+                            <th class="p-3">行駛里程</th>
+                            <th class="p-3">自主加油</th>
                             <th class="p-3 text-center">外觀存證</th>
                         </tr>
                     </thead>
@@ -78,7 +80,6 @@
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl my-8 p-6 space-y-4">
             <h3 id="return-title" class="text-lg font-bold text-emerald-800">車輛歸還與四面外觀拍照</h3>
             
-            <!-- 📢 新增：網路不好時的簡短離線操作備註 -->
             <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 leading-relaxed">
                 💡 <strong>停車場訊號不佳時：</strong>可先用手機相機拍好4個角度，回到辦公室有訊號處，再打開本網頁從相簿選取照片、補填里程送出即可。
             </div>
@@ -203,14 +204,31 @@
         }
 
         function renderHistory(logs) {
-            document.getElementById('history-tbody').innerHTML = logs.map(log => `
-                <tr class="hover:bg-slate-50/60 text-xs">
-                    <td class="p-3 font-bold">${log.plate}<br><span class="text-[10px] text-slate-400 font-normal">${log.name.split('(')[0]}</span></td>
-                    <td class="p-3"><span class="px-1.5 py-0.5 rounded font-medium ${log.type==='出車'?'bg-rose-50 text-rose-600':'bg-emerald-50 text-emerald-600'}">${log.type}</span><br><span class="text-slate-700 font-medium">${log.user}</span></td>
-                    <td class="p-3 text-[11px] text-slate-500">${log.time}<br>儀表: <span class="font-mono font-medium text-slate-700">${log.mileage} km</span></td>
-                    <td class="p-3 text-center">${log.type==='還車'?`<button onclick="viewPhotos('${log.id}')" class="text-xs text-indigo-600 font-semibold underline cursor-pointer">👀 檢視影像</button>`:'-'}</td>
-                </tr>
-            `).join('');
+            // 從傳回的 log 陣列中尋找出車紀錄，動態去比對和估算公里數
+            document.getElementById('history-tbody').innerHTML = logs.map((log, index) => {
+                let diffMileageText = "-";
+                
+                // 如果是還車動作，直接計算出與出車的差距
+                if (log.type === "還車") {
+                    // 往下尋找同車牌、且是「出車」的紀錄
+                    let matchingCheckout = logs.slice(index + 1).find(l => l.plate === log.plate && l.type === "出車");
+                    if (matchingCheckout) {
+                        let diff = parseInt(log.mileage) - parseInt(matchingCheckout.mileage);
+                        if (!isNaN(diff)) diffMileageText = `<span class="text-emerald-600 font-bold">${diff} km</span>`;
+                    }
+                }
+
+                return `
+                    <tr class="hover:bg-slate-50/60 text-xs">
+                        <td class="p-3 font-bold">${log.plate}<br><span class="text-[10px] text-slate-400 font-normal">${log.name.split('(')[0]}</span></td>
+                        <td class="p-3"><span class="px-1.5 py-0.5 rounded font-medium ${log.type==='出車'?'bg-rose-50 text-rose-600':'bg-emerald-50 text-emerald-600'}">${log.type}</span><br><span class="text-slate-700 font-medium">${log.user}</span></td>
+                        <td class="p-3 text-[11px] text-slate-500">${log.time}<br>儀表: <span class="font-mono font-medium text-slate-700">${log.mileage} km</span></td>
+                        <td class="p-3 font-mono">${diffMileageText}</td>
+                        <td class="p-3 text-slate-600">${log.refuel || "-"}</td>
+                        <td class="p-3 text-center">${log.type==='還車'?`<button onclick="viewPhotos('${log.id}')" class="text-xs text-indigo-600 font-semibold underline cursor-pointer">👀 檢視影像</button>`:'-'}</td>
+                    </tr>
+                `;
+            }).join('');
         }
 
         function actionBtn(plate) {
@@ -295,9 +313,7 @@
             let startMileage = parseInt(currentCar.mileage);
             let endMileage = parseInt(mileage);
 
-            if (isNaN(startMileage)) {
-                startMileage = 0; 
-            }
+            if (isNaN(startMileage)) { startMileage = 0; }
 
             if (endMileage <= startMileage) {
                 return alert(`⚠️ 里程填寫錯誤！\n還車里程 (${endMileage} km) 必須大於出發時的起始里程 (${startMileage} km)。\n請重新確認車輛儀表板。`);
@@ -306,6 +322,8 @@
             if(!currentImages.front || !currentImages.back || !currentImages.left || !currentImages.right) {
                 return alert('為了釐清車損責任，歸還時必須完整拍攝 4 個角度的照片！');
             }
+
+            let drivenDistance = endMileage - startMileage;
 
             closeModal('return-modal');
             document.getElementById('car-container').classList.add('hidden');
@@ -316,7 +334,11 @@
                 refuel: refuel, notes: notes||"無異常", images: currentImages,
                 time: new Date().toLocaleString('zh-TW',{hour12:false})
             })});
-            fetchStatus();
+            
+            await fetchStatus();
+            
+            // 🎉 還車成功後跳出本次行駛里程提示
+            alert(`🎉 還車成功！\n駕駛同仁: ${user}\n本次行駛里程共計：${drivenDistance} 公里。\n辛苦了！`);
         }
 
         async function viewPhotos(logId) {
