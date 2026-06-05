@@ -94,25 +94,26 @@
             <div>
                 <label class="block text-xs font-bold text-slate-700 mb-2">請圍繞車身拍攝 4 張照片防杜擦撞爭議 *</label>
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <!-- 🛠️ 修正點：拿掉了 capture="environment" 允許從相簿選圖 -->
                     <div class="border rounded-xl p-2 text-center bg-slate-50 relative min-h-[90px] flex flex-col justify-center items-center overflow-hidden">
                         <span class="text-[11px] text-slate-500 mb-1">1.車頭前方</span>
                         <div id="prev-front" class="absolute inset-0 bg-cover bg-center rounded-xl hidden"></div>
-                        <label class="cursor-pointer bg-white border px-2 py-1 text-xs rounded-md shadow-xs z-10">拍攝<input type="file" accept="image/*" capture="environment" class="hidden" onchange="compressImg(this, 'front')"></label>
+                        <label class="cursor-pointer bg-white border px-2 py-1 text-xs rounded-md shadow-xs z-10">選取/拍攝<input type="file" accept="image/*" class="hidden" onchange="compressImg(this, 'front')"></label>
                     </div>
                     <div class="border rounded-xl p-2 text-center bg-slate-50 relative min-h-[90px] flex flex-col justify-center items-center overflow-hidden">
                         <span class="text-[11px] text-slate-500 mb-1">2.車尾後方</span>
                         <div id="prev-back" class="absolute inset-0 bg-cover bg-center rounded-xl hidden"></div>
-                        <label class="cursor-pointer bg-white border px-2 py-1 text-xs rounded-md shadow-xs z-10">拍攝<input type="file" accept="image/*" capture="environment" class="hidden" onchange="compressImg(this, 'back')"></label>
+                        <label class="cursor-pointer bg-white border px-2 py-1 text-xs rounded-md shadow-xs z-10">選取/拍攝<input type="file" accept="image/*" class="hidden" onchange="compressImg(this, 'back')"></label>
                     </div>
                     <div class="border rounded-xl p-2 text-center bg-slate-50 relative min-h-[90px] flex flex-col justify-center items-center overflow-hidden">
                         <span class="text-[11px] text-slate-500 mb-1">3.車身左側</span>
                         <div id="prev-left" class="absolute inset-0 bg-cover bg-center rounded-xl hidden"></div>
-                        <label class="cursor-pointer bg-white border px-2 py-1 text-xs rounded-md shadow-xs z-10">拍攝<input type="file" accept="image/*" capture="environment" class="hidden" onchange="compressImg(this, 'left')"></label>
+                        <label class="cursor-pointer bg-white border px-2 py-1 text-xs rounded-md shadow-xs z-10">選取/拍攝<input type="file" accept="image/*" class="hidden" onchange="compressImg(this, 'left')"></label>
                     </div>
                     <div class="border rounded-xl p-2 text-center bg-slate-50 relative min-h-[90px] flex flex-col justify-center items-center overflow-hidden">
                         <span class="text-[11px] text-slate-500 mb-1">4.車身右側</span>
                         <div id="prev-right" class="absolute inset-0 bg-cover bg-center rounded-xl hidden"></div>
-                        <label class="cursor-pointer bg-white border px-2 py-1 text-xs rounded-md shadow-xs z-10">拍攝<input type="file" accept="image/*" capture="environment" class="hidden" onchange="compressImg(this, 'right')"></label>
+                        <label class="cursor-pointer bg-white border px-2 py-1 text-xs rounded-md shadow-xs z-10">選取/拍攝<input type="file" accept="image/*" class="hidden" onchange="compressImg(this, 'right')"></label>
                     </div>
                 </div>
             </div>
@@ -122,7 +123,7 @@
         </div>
     </div>
 
-    <!-- 檢視照片大圖彈窗 -->
+    <!-- 檢紙照片大圖彈窗 -->
     <div id="photo-modal" class="hidden fixed inset-0 bg-slate-900/80 flex items-center justify-center p-4 z-60">
         <div class="bg-white rounded-2xl p-4 max-w-lg w-full space-y-4">
             <h4 class="font-bold text-slate-700">歸還存證照片瀏覽</h4>
@@ -204,13 +205,10 @@
         }
 
         function renderHistory(logs) {
-            // 從傳回的 log 陣列中尋找出車紀錄，動態去比對和估算公里數
             document.getElementById('history-tbody').innerHTML = logs.map((log, index) => {
                 let diffMileageText = "-";
                 
-                // 如果是還車動作，直接計算出與出車的差距
                 if (log.type === "還車") {
-                    // 往下尋找同車牌、且是「出車」的紀錄
                     let matchingCheckout = logs.slice(index + 1).find(l => l.plate === log.plate && l.type === "出車");
                     if (matchingCheckout) {
                         let diff = parseInt(log.mileage) - parseInt(matchingCheckout.mileage);
@@ -337,7 +335,6 @@
             
             await fetchStatus();
             
-            // 🎉 還車成功後跳出本次行駛里程提示
             alert(`🎉 還車成功！\n駕駛同仁: ${user}\n本次行駛里程共計：${drivenDistance} 公里。\n辛苦了！`);
         }
 
