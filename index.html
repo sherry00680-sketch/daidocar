@@ -20,11 +20,9 @@
 
     <main class="max-w-4xl mx-auto px-4 py-6 space-y-8">
         
-        <!-- 車輛卡片區 -->
         <div id="loading-hint" class="text-center py-8 font-medium text-slate-500">正在與雲端資料庫同步中...</div>
         <div id="car-container" class="grid grid-cols-1 md:grid-cols-2 gap-6 hidden"></div>
 
-        <!-- 歷史紀錄 -->
         <section class="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
             <div class="p-4 border-b border-slate-100"><h3 class="font-bold text-slate-700">最新調度動態 (前10筆)</h3></div>
             <div class="overflow-x-auto">
@@ -43,7 +41,6 @@
         </section>
     </main>
 
-    <!-- 出車彈窗 (精準名單下拉化) -->
     <div id="checkout-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
             <h3 id="checkout-title" class="text-lg font-bold mb-4">登記出車</h3>
@@ -73,7 +70,6 @@
         </div>
     </div>
 
-    <!-- 還車拍照彈窗 -->
     <div id="return-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl my-8 p-6 space-y-4">
             <h3 id="return-title" class="text-lg font-bold text-emerald-800">車輛歸還與四面外觀拍照</h3>
@@ -115,7 +111,6 @@
         </div>
     </div>
 
-    <!-- 檢視照片大圖彈窗 -->
     <div id="photo-modal" class="hidden fixed inset-0 bg-slate-900/80 flex items-center justify-center p-4 z-60">
         <div class="bg-white rounded-2xl p-4 max-w-lg w-full space-y-4">
             <h4 class="font-bold text-slate-700">歸還存證照片瀏覽</h4>
@@ -132,7 +127,6 @@
 
 
     <script>
-        // 🔗 您的 Google 雲端應用程式 API 網址
         const API_URL = "https://script.google.com/macros/s/AKfycbz4cJjh7hdcIVDXapA23E7YlpoSEHVqiktSBzBxLx8YNM5fXBomw19V1DVwPyl4Hlnw/exec"; 
 
         let globalCars = {};
@@ -159,11 +153,8 @@
             container.innerHTML = Object.values(cars).map(car => {
                 const statusStr = car.status ? car.status.trim() : "";
                 const isOut = statusStr === "出車使用中";
-                
-                // 判斷是否為行政手動鎖定狀態（維修中、保養中等）
                 const isLocked = (statusStr === "維修中" || statusStr === "保養中");
                 
-                // 決定卡片邊框與狀態標籤顏色
                 let borderClass = "border-emerald-500";
                 let badgeClass = "bg-emerald-50 text-emerald-600";
                 if (isOut) {
@@ -174,7 +165,6 @@
                     badgeClass = "bg-amber-50 text-amber-600";
                 }
 
-                // 決定按電鈕文字與行為
                 let buttonHtml = "";
                 if (isOut) {
                     buttonHtml = `<button onclick="actionBtn('${car.plate}')" class="w-full py-2.5 rounded-xl text-sm font-medium text-white shadow-xs cursor-pointer bg-slate-800 hover:bg-slate-900">返廠登記：進行拍照與歸還</button>`;
@@ -289,6 +279,20 @@
             let notes = document.getElementById('return-notes').value.trim();
 
             if(!mileage) return alert('請輸入還車里程！');
+            
+            // 🛑 核心防呆：從全域資料讀取當初出車時的起始里程
+            let currentCar = globalCars[plate];
+            let startMileage = parseInt(currentCar.mileage);
+            let endMileage = parseInt(mileage);
+
+            if (isNaN(startMileage)) {
+                startMileage = 0; // 若資料庫無里程，防呆設為0
+            }
+
+            if (endMileage <= startMileage) {
+                return alert(`⚠️ 里程填寫錯誤！\n還車里程 (${endMileage} km) 必須大於出發時的起始里程 (${startMileage} km)。\n請重新確認車輛儀表板。`);
+            }
+
             if(!currentImages.front || !currentImages.back || !currentImages.left || !currentImages.right) {
                 return alert('為了釐清車損責任，歸還時必須完整拍攝 4 個角度的照片！');
             }
