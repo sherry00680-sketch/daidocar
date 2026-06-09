@@ -14,7 +14,10 @@
     <nav class="bg-indigo-900 text-white shadow-md">
         <div class="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">
             <h1 class="text-lg font-bold tracking-wide">日商泰道公司車輛管理系統</h1>
-            <button onclick="fetchStatus()" class="text-xs bg-indigo-700 px-3 py-1 rounded-lg cursor-pointer">🔄 重新整理</button>
+            <div class="flex space-x-2">
+                <button onclick="openMaintenanceModal()" class="text-xs bg-amber-600 hover:bg-amber-700 px-3 py-1.5 rounded-lg cursor-pointer font-medium">🔧 登記新保養</button>
+                <button onclick="fetchStatus()" class="text-xs bg-indigo-700 px-3 py-1.5 rounded-lg cursor-pointer">🔄 重新整理</button>
+            </div>
         </div>
     </nav>
 
@@ -38,6 +41,29 @@
                         </tr>
                     </thead>
                     <tbody id="history-tbody" class="divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
+            <div class="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <h3 class="font-bold text-slate-700 flex items-center">🛠️ 車輛定期保養維修紀錄表</h3>
+                <button onclick="toggleMaintPanel()" id="maint-toggle-btn" class="text-xs text-indigo-600 font-semibold hover:underline cursor-pointer">展開明細 ↓</button>
+            </div>
+            <div id="maint-panel-content" class="overflow-x-auto hidden">
+                <table class="w-full text-left text-sm">
+                    <thead>
+                        <tr class="bg-slate-100 text-slate-600 text-xs border-b border-slate-200">
+                            <th class="p-3">保養日期</th>
+                            <th class="p-3">車牌/車輛</th>
+                            <th class="p-3">保養里程</th>
+                            <th class="p-3">維修保養明細</th>
+                            <th class="p-3 text-right">費用金額 (NTD)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="maint-tbody" class="divide-y divide-slate-100">
+                        <tr><td colspan="5" class="p-4 text-center text-slate-400 italic">點擊展開明細載入雲端保養紀錄...</td></tr>
+                    </tbody>
                 </table>
             </div>
         </section>
@@ -74,12 +100,7 @@
 
     <div id="return-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl my-8 p-6 space-y-4">
-            <h3 id="return-title" class="text-lg font-bold text-emerald-800">車輛歸還與四面外觀拍照</h3>
-            
-            <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 leading-relaxed">
-                💡 <strong>停車場訊號不佳時：</strong>可先用手機相機拍好4個角度，回到辦公室有訊號處，再打開本網頁從相簿選取照片、補填里程送出即可。
-            </div>
-            
+            <h3 id="return-title" class="text-lg font-bold text-emerald-800">車輛歸還登記</h3>
             <input type="hidden" id="return-plate"><input type="hidden" id="return-carname"><input type="hidden" id="return-user">
             
             <div class="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border">
@@ -88,7 +109,7 @@
             </div>
 
             <div>
-                <label class="block text-xs font-bold text-slate-700 mb-2">請圍繞車身拍攝 4 張照片防杜擦撞爭議 *</label>
+                <label class="block text-xs font-bold text-slate-700 mb-2">車身四面照片（選填，如有新車損建議拍照存證）</label>
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <div class="border rounded-xl p-2 text-center bg-slate-50 relative min-h-[90px] flex flex-col justify-center items-center overflow-hidden">
                         <span class="text-[11px] text-slate-500 mb-1">1.車頭前方</span>
@@ -115,6 +136,23 @@
 
             <div><label class="block text-xs font-bold text-slate-600 mb-1">外觀異狀說明</label><textarea id="return-notes" rows="2" placeholder="若無請填寫「無」" class="w-full p-2 border rounded-xl text-sm focus:outline-emerald-600"></textarea></div>
             <div class="flex justify-end space-x-2"><button onclick="closeModal('return-modal')" class="px-4 py-2 text-sm text-slate-500 cursor-pointer">取消</button><button onclick="submitReturn()" class="px-4 py-2 text-sm bg-emerald-600 text-white rounded-xl cursor-pointer">確認完整歸還</button></div>
+        </div>
+    </div>
+
+    <div id="maint-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <h3 class="text-lg font-bold mb-4 text-amber-700">🛠️ 登記車輛維修保養紀錄</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">選擇車輛 *</label>
+                    <select id="maint-plate" class="w-full p-2.5 bg-white border rounded-xl text-sm focus:outline-amber-600"></select>
+                </div>
+                <div><label class="block text-xs font-bold text-slate-600 mb-1">保養日期 *</label><input type="date" id="maint-date" class="w-full p-2 border rounded-xl text-sm focus:outline-amber-600"></div>
+                <div><label class="block text-xs font-bold text-slate-600 mb-1">當前保養里程 (km) *</label><input type="number" id="maint-mileage" placeholder="例如: 53000" class="w-full p-2 border rounded-xl text-sm font-mono focus:outline-amber-600"></div>
+                <div><label class="block text-xs font-bold text-slate-600 mb-1">保養維修明細項目 *</label><textarea id="maint-detail" rows="3" placeholder="例如：定期更換機油、換煞車片。" class="w-full p-2 border rounded-xl text-sm focus:outline-amber-600"></textarea></div>
+                <div><label class="block text-xs font-bold text-slate-600 mb-1">保養費用金額 (NTD) *</label><input type="number" id="maint-cost" placeholder="例如: 3500" class="w-full p-2 border rounded-xl text-sm font-mono focus:outline-amber-600"></div>
+            </div>
+            <div class="mt-6 flex justify-end space-x-2"><button onclick="closeModal('maint-modal')" class="px-4 py-2 text-sm text-slate-500 cursor-pointer">取消</button><button onclick="submitMaintenance()" class="px-4 py-2 text-sm bg-amber-600 text-white rounded-xl cursor-pointer">確認存入後台</button></div>
         </div>
     </div>
 
@@ -148,8 +186,14 @@
                 globalCars = data.cars;
                 renderCars(data.cars);
                 renderHistory(data.logs);
+                
+                if (data.maintenances) renderMaintenances(data.maintenances);
+                
+                const maintSelect = document.getElementById('maint-plate');
+                maintSelect.innerHTML = Object.values(data.cars).map(c => `<option value="${c.plate}">${c.plate} - ${c.name.split('(')[0]}</option>`).join('');
+                
             } catch(e) { 
-                alert("雲端資料同步失敗，請確認 Apps Script 是否已設定權限為『任何人 (Anyone)』且已重新發佈部署。"); 
+                alert("雲端資料同步失敗，請確認網路連線或 Apps Script 設定。"); 
             }
             document.getElementById('loading-hint').classList.add('hidden');
             document.getElementById('car-container').classList.remove('hidden');
@@ -174,7 +218,7 @@
 
                 let buttonHtml = "";
                 if (isOut) {
-                    buttonHtml = `<button onclick="actionBtn('${car.plate}')" class="w-full py-2.5 rounded-xl text-sm font-medium text-white shadow-xs cursor-pointer bg-slate-800 hover:bg-slate-900">返廠登記：進行拍照與歸還</button>`;
+                    buttonHtml = `<button onclick="actionBtn('${car.plate}')" class="w-full py-2.5 rounded-xl text-sm font-medium text-white shadow-xs cursor-pointer bg-slate-800 hover:bg-slate-900">返廠登記：進行歸還流程</button>`;
                 } else if (isLocked) {
                     buttonHtml = `<button disabled class="w-full py-2.5 rounded-xl text-sm font-medium text-slate-400 bg-slate-200 cursor-not-allowed">車輛維修保養中 • 暫停預約</button>`;
                 } else {
@@ -201,7 +245,6 @@
         function renderHistory(logs) {
             document.getElementById('history-tbody').innerHTML = logs.map((log, index) => {
                 let diffMileageText = "-";
-                
                 if (log.type === "還車") {
                     let matchingCheckout = logs.slice(index + 1).find(l => l.plate === log.plate && l.type === "出車");
                     if (matchingCheckout) {
@@ -209,7 +252,6 @@
                         if (!isNaN(diff)) diffMileageText = `<span class="text-emerald-600 font-bold">${diff} km</span>`;
                     }
                 }
-
                 return `
                     <tr class="hover:bg-slate-50/60 text-xs">
                         <td class="p-3 font-bold">${log.plate}<br><span class="text-[10px] text-slate-400 font-normal">${log.name.split('(')[0]}</span></td>
@@ -221,6 +263,71 @@
                     </tr>
                 `;
             }).join('');
+        }
+
+        function renderMaintenances(maintenances) {
+            const tbody = document.getElementById('maint-tbody');
+            if (!maintenances || maintenances.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-slate-400 italic">目前尚無任何車輛維修保養登記紀錄</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = maintenances.map(m => `
+                <tr class="hover:bg-amber-50/40 text-xs">
+                    <td class="p-3 font-mono text-slate-600">${m.date}</td>
+                    <td class="p-3 font-bold text-slate-700">${m.plate}</td>
+                    <td class="p-3 font-mono text-slate-600">${m.mileage} km</td>
+                    <td class="p-3 text-slate-700 max-w-xs break-words">${m.detail}</td>
+                    <td class="p-3 text-right font-mono font-bold text-amber-700">$${Number(m.cost).toLocaleString()}</td>
+                </tr>
+            `).join('');
+        }
+
+        async function fetchMaintenancesDirectly() {
+            try {
+                let res = await fetch(API_URL, { method: "POST", body: JSON.stringify({ action: "get_status" }) });
+                let data = await res.json();
+                if (data.maintenances) renderMaintenances(data.maintenances);
+            } catch(e) { console.error(e); }
+        }
+
+        function toggleMaintPanel() {
+            const panel = document.getElementById('maint-panel-content');
+            const btn = document.getElementById('maint-toggle-btn');
+            if (panel.classList.contains('hidden')) {
+                panel.classList.remove('hidden');
+                btn.innerText = "收起明細 ↑";
+                fetchMaintenancesDirectly();
+            } else {
+                panel.classList.add('hidden');
+                btn.innerText = "展開明細 ↓";
+            }
+        }
+
+        function openMaintenanceModal() {
+            document.getElementById('maint-date').value = new Date().toISOString().split('T')[0];
+            document.getElementById('maint-mileage').value = '';
+            document.getElementById('maint-detail').value = '';
+            document.getElementById('maint-cost').value = '';
+            openModal('maint-modal');
+        }
+
+        async function submitMaintenance() {
+            let plate = document.getElementById('maint-plate').value;
+            let date = document.getElementById('maint-date').value;
+            let mileage = document.getElementById('maint-mileage').value.trim();
+            let detail = document.getElementById('maint-detail').value.trim();
+            let cost = document.getElementById('maint-cost').value.trim();
+
+            if (!date || !mileage || !detail || !cost) return alert('所有保養欄位皆為必填項目！');
+            closeModal('maint-modal');
+            document.getElementById('car-container').classList.add('hidden');
+            document.getElementById('loading-hint').classList.remove('hidden');
+
+            await fetch(API_URL, { method: "POST", body: JSON.stringify({
+                action: "add_maintenance", plate: plate, date: date, mileage: mileage, detail: detail, cost: cost
+            })});
+            await fetchStatus();
+            alert('🛠️ 維修保養紀錄已成功同步存入雲端！');
         }
 
         function actionBtn(plate) {
@@ -236,7 +343,7 @@
                 document.getElementById('return-plate').value = plate;
                 document.getElementById('return-carname').value = car.name;
                 document.getElementById('return-user').value = car.user;
-                document.getElementById('return-title').innerText = `【還車外觀審查】${car.name}`;
+                document.getElementById('return-title').innerText = `【還車登記】${car.name}`;
                 document.getElementById('return-mileage').value = '';
                 document.getElementById('return-notes').value = '無異常。';
                 ['front','back','left','right'].forEach(s => {
@@ -268,13 +375,10 @@
         function compressImg(input, slot) {
             let file = input.files[0];
             if(!file) return;
-            
-            // 🛠️ iPhone 安全防呆：確保同仁選取的是圖片檔案再進行 Canvas 處理
             if (!file.type.startsWith('image/')) {
                 alert('請選取正確的圖片檔案格式！');
                 return;
             }
-
             let reader = new FileReader();
             reader.onload = function(e) {
                 let img = new Image();
@@ -315,13 +419,10 @@
             if (isNaN(startMileage)) { startMileage = 0; }
 
             if (endMileage <= startMileage) {
-                return alert(`⚠️ 里程填寫錯誤！\n還車里程 (${endMileage} km) 必須大於出發時的起始里程 (${startMileage} km)。\n請重新確認車輛儀表板。`);
+                return alert(`⚠️ 里程填寫錯誤！\n還車里程 (${endMileage} km) 必須大於出發時的起始里程 (${startMileage} km)。`);
             }
 
-            if(!currentImages.front || !currentImages.back || !currentImages.left || !currentImages.right) {
-                return alert('避免車損責任，歸還時必須完整拍攝 4 個角度的照片！');
-            }
-
+            // 🛠️ 修正點：移除了照片必須存在的強制 if 檢查，直接封裝送出
             let drivenDistance = endMileage - startMileage;
 
             closeModal('return-modal');
@@ -335,7 +436,6 @@
             })});
             
             await fetchStatus();
-            
             alert(`🎉 還車成功！\n駕駛同仁: ${user}\n本次行駛里程共計：${drivenDistance} 公里。\n辛苦了！`);
         }
 
@@ -347,22 +447,16 @@
             let res = await fetch(API_URL, { method:"POST", body: JSON.stringify({ action:"get_photos", logId: logId }) });
             let data = await res.json();
             
-            if(data.images) {
+            // 🛠️ 修正點：如果後台發現這筆還車紀錄當時根本沒給照片，貼心提示使用者
+            if(data.images && data.images.front) {
                 ['front','back','left','right'].forEach(s => {
                     document.getElementById(`view-${s}`).style.backgroundImage = `url('${data.images[s]}')`;
                 });
                 document.getElementById('photo-loading').classList.add("hidden");
                 document.getElementById('photo-grid').classList.remove('hidden');
             } else {
-                alert("找不到該筆紀錄的照片。");
-                closeModal('photo-modal');
+                document.getElementById('photo-loading').innerText = "💡 駕駛同仁在此次還車時，未上傳任何外觀照片。";
             }
         }
 
-        function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
-        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
-        
-        window.onload = fetchStatus;
-    </script>
-</body>
-</html>
+        function openModal(id) { document.getElementById(id).classList.remove('hidden
