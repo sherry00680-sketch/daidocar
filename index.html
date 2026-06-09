@@ -1,462 +1,77 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>日商泰道公司車輛管理系統</title>
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-    <style>
-        body { font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif; }
-    </style>
-</head>
-<body class="bg-slate-100 min-h-screen text-slate-800">
+function doPost(e) {
+  var p = JSON.parse(e.postData.contents);
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  var logSheet = ss.getSheetByName("出車紀錄") || ss.insertSheet("出車紀錄");
+  var carSheet = ss.getSheetByName("車輛狀態") || ss.insertSheet("車輛狀態");
+  var maintSheet = ss.getSheetByName("保養紀錄") || ss.insertSheet("保養紀錄");
+  
+  if (logSheet.getLastRow() === 0) {
+    logSheet.appendRow(["紀錄編號", "動作", "車牌號碼", "車輛名稱", "駕駛姓名", "時間", "儀表里程", "補給加油", "車損異常回報", "照片資料(JSON)"]);
+  }
+  if (carSheet.getLastRow() === 0) {
+    carSheet.appendRow(["車牌號碼", "車輛名稱", "目前狀態", "目前駕駛", "出車時間", "出車里程"]);
+    carSheet.appendRow(["ABC-1234", "公司公務車(房車)", "廠內空閒中", "-", "-", "-"]);
+    carSheet.appendRow(["XYZ-5678", "載貨發財車(貨車)", "廠內空閒中", "-", "-", "-"]);
+  }
+  if (maintSheet.getLastRow() === 0) {
+    maintSheet.appendRow(["保養日期", "車牌號碼", "保養里程", "維修保養明細項目", "費用金額"]);
+  }
 
-    <nav class="bg-indigo-900 text-white shadow-md">
-        <div class="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">
-            <h1 class="text-lg font-bold tracking-wide">日商泰道公司車輛管理系統</h1>
-            <div class="flex space-x-2">
-                <button onclick="openMaintenanceModal()" class="text-xs bg-amber-600 hover:bg-amber-700 px-3 py-1.5 rounded-lg cursor-pointer font-medium">🔧 登記新保養</button>
-                <button onclick="fetchStatus()" class="text-xs bg-indigo-700 px-3 py-1.5 rounded-lg cursor-pointer">🔄 重新整理</button>
-            </div>
-        </div>
-    </nav>
+  // ⚡ 核心優化：只撈取車輛當前狀態，追求毫秒級無感回傳
+  if (p.action === "get_status") {
+    var data = carSheet.getDataRange().getValues();
+    var cars = {};
+    for (var i = 1; i < data.length; i++) {
+      cars[data[i][0]] = {
+        plate: data[i][0], name: data[i][1],
+        status: data[i][2], user: data[i][3], time: data[i][4], mileage: data[i][5]
+      };
+    }
+    return ContentService.createTextOutput(JSON.stringify({cars: cars})).setMimeType(ContentService.MimeType.JSON);
+  }
 
-    <main class="max-w-4xl mx-auto px-4 py-6 space-y-8">
-        
-        <div id="loading-hint" class="text-center py-8 font-medium text-slate-500">正在與雲端資料庫同步中...</div>
-        <div id="car-container" class="grid grid-cols-1 md:grid-cols-2 gap-6 hidden"></div>
+  // ⚡ 分流優化 1：同仁點擊時才單獨撈取前 10 筆歷史紀錄
+  if (p.action === "get_logs") {
+    var logs = [];
+    var logData = logSheet.getDataRange().getValues();
+    // 略過最後一欄巨大的照片 JSON，加快傳輸速度
+    for (var j = Math.max(1, logData.length - 10); j < logData.length; j++) {
+      logs.push({
+        id: logData[j][0], type: logData[j][1], plate: logData[j][2], name: logData[j][3],
+        user: logData[j][4], time: logData[j][5], mileage: logData[j][6], refuel: logData[j][7], notes: logData[j][8]
+      });
+    }
+    return ContentService.createTextOutput(JSON.stringify({logs: logs.reverse()})).setMimeType(ContentService.MimeType.JSON);
+  }
 
-        <section class="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
-            <div class="p-4 border-b border-slate-100"><h3 class="font-bold text-slate-700">最新調度動態 (前10筆)</h3></div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-left text-sm">
-                    <thead>
-                        <tr class="bg-slate-50 text-slate-500 text-xs border-b border-slate-200">
-                            <th class="p-3">車輛</th>
-                            <th class="p-3">人員/動作</th>
-                            <th class="p-3">時間/里程</th>
-                            <th class="p-3">行駛里程</th>
-                            <th class="p-3">自主加油</th>
-                            <th class="p-3 text-center">外觀存證</th>
-                        </tr>
-                    </thead>
-                    <tbody id="history-tbody" class="divide-y divide-slate-100"></tbody>
-                </table>
-            </div>
-        </section>
+  // ⚡ 分流優化 2：行政點擊時才單獨撈取保養明細
+  if (p.action === "get_maintenances") {
+    var maintenances = [];
+    var maintData = maintSheet.getDataRange().getValues();
+    for (var k = Math.max(1, maintData.length - 20); k < maintData.length; k++) {
+      maintenances.push({
+        date: Utilities.formatDate(new Date(maintData[k][0]), "GMT+8", "yyyy-MM-dd"),
+        plate: maintData[k][1], mileage: maintData[k][2], detail: maintData[k][3], cost: maintData[k][4]
+      });
+    }
+    return ContentService.createTextOutput(JSON.stringify({maintenances: maintenances.reverse()})).setMimeType(ContentService.MimeType.JSON);
+  }
 
-        <section class="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
-            <div class="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                <h3 class="font-bold text-slate-700 flex items-center">🛠️ 車輛定期保養維修紀錄表</h3>
-                <button onclick="toggleMaintPanel()" id="maint-toggle-btn" class="text-xs text-indigo-600 font-semibold hover:underline cursor-pointer">展開明細 ↓</button>
-            </div>
-            <div id="maint-panel-content" class="overflow-x-auto hidden">
-                <table class="w-full text-left text-sm">
-                    <thead>
-                        <tr class="bg-slate-100 text-slate-600 text-xs border-b border-slate-200">
-                            <th class="p-3">保養日期</th>
-                            <th class="p-3">車牌/車輛</th>
-                            <th class="p-3">保養里程</th>
-                            <th class="p-3">維修保養明細</th>
-                            <th class="p-3 text-right">費用金額 (NTD)</th>
-                        </tr>
-                    </thead>
-                    <tbody id="maint-tbody" class="divide-y divide-slate-100">
-                        <tr><td colspan="5" class="p-4 text-center text-slate-400 italic">點擊展開明細載入雲端保養紀錄...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
-    </main>
+  // 處理出車登記
+  if (p.action === "checkout") {
+    logSheet.appendRow([Date.now(), "出車", p.plate, p.name, p.user, p.time, p.mileage, "-", "-", ""]);
+    var rows = carSheet.getDataRange().getValues();
+    for (var r = 1; r < rows.length; r++) {
+      if (rows[r][0] === p.plate) {
+        carSheet.getRange(r+1, 3, 1, 4).setValues([["出車使用中", p.user, p.time, p.mileage]]);
+        break;
+      }
+    }
+    return ContentService.createTextOutput(JSON.stringify({success: true})).setMimeType(ContentService.MimeType.JSON);
+  }
 
-    <div id="checkout-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-            <h3 id="checkout-title" class="text-lg font-bold mb-4">登記出車</h3>
-            <div class="space-y-4">
-                <input type="hidden" id="checkout-plate"><input type="hidden" id="checkout-carname">
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">駕駛同仁姓名 *</label>
-                    <select id="checkout-user" class="w-full p-2.5 bg-white border rounded-xl text-sm focus:outline-indigo-600">
-                        <option value="">-- 請選擇您的姓名 --</option>
-                        <option value="KAI">KAI</option>
-                        <option value="AF">AF</option>
-                        <option value="Julia">Julia</option>
-                        <option value="Stacey">Stacey</option>
-                        <option value="Fay">Fay</option>
-                        <option value="Sam">Sam</option>
-                        <option value="Iron">Iron</option>
-                        <option value="Ellie">Ellie</option>
-                        <option value="Sherry">Sherry</option>
-                        <option value="Monisha">Monisha</option>
-                        <option value="Dennis">Dennis</option>
-                        <option value="Steve">Steve</option>
-                    </select>
-                </div>
-                <div><label class="block text-xs font-bold text-slate-600 mb-1">出發里程數 (km) *</label><input type="number" id="checkout-mileage" class="w-full p-2 border rounded-xl text-sm font-mono focus:outline-indigo-600"></div>
-            </div>
-            <div class="mt-6 flex justify-end space-x-2"><button onclick="closeModal('checkout-modal')" class="px-4 py-2 text-sm text-slate-500 cursor-pointer">取消</button><button onclick="submitCheckout()" class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-xl cursor-pointer">確認出車</button></div>
-        </div>
-    </div>
-
-    <div id="return-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl my-8 p-6 space-y-4">
-            <h3 id="return-title" class="text-lg font-bold text-emerald-800">車輛歸還登記</h3>
-            <input type="hidden" id="return-plate"><input type="hidden" id="return-carname"><input type="hidden" id="return-user">
-            
-            <div class="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border">
-                <div><label class="block text-xs font-bold text-slate-600 mb-1">還車總里程 (km) *</label><input type="number" id="return-mileage" class="w-full p-2 bg-white border rounded-xl text-sm font-mono focus:outline-emerald-600"></div>
-                <div><label class="block text-xs font-bold text-slate-600 mb-1">補給加油</label><select id="return-refuel" class="w-full p-2 bg-white border rounded-xl text-sm focus:outline-emerald-600"><option value="否">無</option><option value="是">有，已自行墊付</option></select></div>
-            </div>
-
-            <div>
-                <label class="block text-xs font-bold text-slate-700 mb-2">車身四面照片（選填，如有新車損建議拍照存證）</label>
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    <div class="border rounded-xl p-2 text-center bg-slate-50 relative min-h-[90px] flex flex-col justify-center items-center overflow-hidden">
-                        <span class="text-[11px] text-slate-500 mb-1">1.車頭前方</span>
-                        <div id="prev-front" class="absolute inset-0 bg-cover bg-center rounded-xl hidden"></div>
-                        <label class="cursor-pointer bg-white border px-2 py-1 text-xs rounded-md shadow-xs z-10">選取/拍攝<input type="file" class="hidden" onchange="compressImg(this, 'front')"></label>
-                    </div>
-                    <div class="border rounded-xl p-2 text-center bg-slate-50 relative min-h-[90px] flex flex-col justify-center items-center overflow-hidden">
-                        <span class="text-[11px] text-slate-500 mb-1">2.車尾後方</span>
-                        <div id="prev-back" class="absolute inset-0 bg-cover bg-center rounded-xl hidden"></div>
-                        <label class="cursor-pointer bg-white border px-2 py-1 text-xs rounded-md shadow-xs z-10">選取/拍攝<input type="file" class="hidden" onchange="compressImg(this, 'back')"></label>
-                    </div>
-                    <div class="border rounded-xl p-2 text-center bg-slate-50 relative min-h-[90px] flex flex-col justify-center items-center overflow-hidden">
-                        <span class="text-[11px] text-slate-500 mb-1">3.車身左側</span>
-                        <div id="prev-left" class="absolute inset-0 bg-cover bg-center rounded-xl hidden"></div>
-                        <label class="cursor-pointer bg-white border px-2 py-1 text-xs rounded-md shadow-xs z-10">選取/拍攝<input type="file" class="hidden" onchange="compressImg(this, 'left')"></label>
-                    </div>
-                    <div class="border rounded-xl p-2 text-center bg-slate-50 relative min-h-[90px] flex flex-col justify-center items-center overflow-hidden">
-                        <span class="text-[11px] text-slate-500 mb-1">4.車身右側</span>
-                        <div id="prev-right" class="absolute inset-0 bg-cover bg-center rounded-xl hidden"></div>
-                        <label class="cursor-pointer bg-white border px-2 py-1 text-xs rounded-md shadow-xs z-10">選取/拍攝<input type="file" class="hidden" onchange="compressImg(this, 'right')"></label>
-                    </div>
-                </div>
-            </div>
-
-            <div><label class="block text-xs font-bold text-slate-600 mb-1">外觀異狀說明</label><textarea id="return-notes" rows="2" placeholder="若無請填寫「無」" class="w-full p-2 border rounded-xl text-sm focus:outline-emerald-600"></textarea></div>
-            <div class="flex justify-end space-x-2"><button onclick="closeModal('return-modal')" class="px-4 py-2 text-sm text-slate-500 cursor-pointer">取消</button><button onclick="submitReturn()" class="px-4 py-2 text-sm bg-emerald-600 text-white rounded-xl cursor-pointer">確認完整歸還</button></div>
-        </div>
-    </div>
-
-    <div id="maint-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-            <h3 class="text-lg font-bold mb-4 text-amber-700">🛠️ 登記車輛維修保養紀錄</h3>
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">選擇車輛 *</label>
-                    <select id="maint-plate" class="w-full p-2.5 bg-white border rounded-xl text-sm focus:outline-amber-600"></select>
-                </div>
-                <div><label class="block text-xs font-bold text-slate-600 mb-1">保養日期 *</label><input type="date" id="maint-date" class="w-full p-2 border rounded-xl text-sm focus:outline-amber-600"></div>
-                <div><label class="block text-xs font-bold text-slate-600 mb-1">當前保養里程 (km) *</label><input type="number" id="maint-mileage" placeholder="例如: 53000" class="w-full p-2 border rounded-xl text-sm font-mono focus:outline-amber-600"></div>
-                <div><label class="block text-xs font-bold text-slate-600 mb-1">保養維修明細項目 *</label><textarea id="maint-detail" rows="3" placeholder="例如：定期更換機油、換煞車片。" class="w-full p-2 border rounded-xl text-sm focus:outline-amber-600"></textarea></div>
-                <div><label class="block text-xs font-bold text-slate-600 mb-1">保養費用金額 (NTD) *</label><input type="number" id="maint-cost" placeholder="例如: 3500" class="w-full p-2 border rounded-xl text-sm font-mono focus:outline-amber-600"></div>
-            </div>
-            <div class="mt-6 flex justify-end space-x-2"><button onclick="closeModal('maint-modal')" class="px-4 py-2 text-sm text-slate-500 cursor-pointer">取消</button><button onclick="submitMaintenance()" class="px-4 py-2 text-sm bg-amber-600 text-white rounded-xl cursor-pointer">確認存入後台</button></div>
-        </div>
-    </div>
-
-    <div id="photo-modal" class="hidden fixed inset-0 bg-slate-900/80 flex items-center justify-center p-4 z-60">
-        <div class="bg-white rounded-2xl p-4 max-w-lg w-full space-y-4">
-            <h4 class="font-bold text-slate-700">歸還存證照片瀏覽</h4>
-            <div id="photo-loading" class="text-center py-6 text-slate-400">正在從雲端下載影像...</div>
-            <div id="photo-grid" class="grid grid-cols-2 gap-2 hidden">
-                <div class="aspect-square bg-slate-100 bg-cover bg-center rounded-lg" id="view-front"></div>
-                <div class="aspect-square bg-slate-100 bg-cover bg-center rounded-lg" id="view-back"></div>
-                <div class="aspect-square bg-slate-100 bg-cover bg-center rounded-lg" id="view-left"></div>
-                <div class="aspect-square bg-slate-100 bg-cover bg-center rounded-lg" id="view-right"></div>
-            </div>
-            <div class="text-right"><button onclick="closeModal('photo-modal')" class="bg-slate-800 text-white px-4 py-1.5 rounded-xl text-sm cursor-pointer">關閉</button></div>
-        </div>
-    </div>
-
-
-    <script>
-        const API_URL = "https://script.google.com/macros/s/AKfycbz4cJjh7hdcIVDXapA23E7YlpoSEHVqiktSBzBxLx8YNM5fXBomw19V1DVwPyl4Hlnw/exec"; 
-
-        let globalCars = {};
-        let currentImages = { front:null, back:null, left:null, right:null };
-
-        async function fetchStatus() {
-            document.getElementById('loading-hint').classList.remove('hidden');
-            document.getElementById('car-container').classList.add('hidden');
-            try {
-                let res = await fetch(API_URL, { method: "POST", body: JSON.stringify({ action: "get_status" }) });
-                let data = await res.json();
-                globalCars = data.cars;
-                renderCars(data.cars);
-                renderHistory(data.logs);
-                
-                if (data.maintenances) renderMaintenances(data.maintenances);
-                
-                const maintSelect = document.getElementById('maint-plate');
-                maintSelect.innerHTML = Object.values(data.cars).map(c => `<option value="${c.plate}">${c.plate} - ${c.name.split('(')[0]}</option>`).join('');
-                
-            } catch(e) { 
-                alert("雲端資料同步失敗，請確認網路連線或 Apps Script 設定。"); 
-            }
-            document.getElementById('loading-hint').classList.add('hidden');
-            document.getElementById('car-container').classList.remove('hidden');
-        }
-
-        function renderCars(cars) {
-            const container = document.getElementById('car-container');
-            container.innerHTML = Object.values(cars).map(car => {
-                const statusStr = car.status ? car.status.trim() : "";
-                const isOut = statusStr === "出車使用中";
-                const isLocked = (statusStr === "維修中" || statusStr === "保養中");
-                
-                let borderClass = "border-emerald-500";
-                let badgeClass = "bg-emerald-50 text-emerald-600";
-                if (isOut) {
-                    borderClass = "border-rose-500";
-                    badgeClass = "bg-rose-50 text-rose-600";
-                } else if (isLocked) {
-                    borderClass = "border-amber-500";
-                    badgeClass = "bg-amber-50 text-amber-600";
-                }
-
-                let buttonHtml = "";
-                if (isOut) {
-                    buttonHtml = `<button onclick="actionBtn('${car.plate}')" class="w-full py-2.5 rounded-xl text-sm font-medium text-white shadow-xs cursor-pointer bg-slate-800 hover:bg-slate-900">返廠登記：進行歸還流程</button>`;
-                } else if (isLocked) {
-                    buttonHtml = `<button disabled class="w-full py-2.5 rounded-xl text-sm font-medium text-slate-400 bg-slate-200 cursor-not-allowed">車輛維修保養中 • 暫停預約</button>`;
-                } else {
-                    buttonHtml = `<button onclick="actionBtn('${car.plate}')" class="w-full py-2.5 rounded-xl text-sm font-medium text-white shadow-xs cursor-pointer bg-indigo-600 hover:bg-indigo-700">同仁出車登記</button>`;
-                }
-
-                return `
-                    <div class="bg-white rounded-2xl shadow-xs border-t-4 ${borderClass} p-5">
-                        <div class="flex justify-between items-start">
-                            <div><h3 class="font-bold text-lg">${car.name}</h3><p class="text-xs font-mono text-slate-400 mt-0.5">車牌：${car.plate}</p></div>
-                            <span class="text-xs px-2.5 py-0.5 rounded-full font-medium ${badgeClass}">${car.status}</span>
-                        </div>
-                        <div class="my-4 bg-slate-50 p-3 rounded-xl text-xs space-y-1 text-slate-600">
-                            <div>駕駛同仁：<span class="font-medium text-slate-800">${car.user}</span></div>
-                            <div>變更時間：<span>${car.time}</span></div>
-                            <div>當前儀表：<span>${car.mileage !== '-' ? car.mileage + ' km' : '-'}</span></div>
-                        </div>
-                        ${buttonHtml}
-                    </div>
-                `;
-            }).join('');
-        }
-
-        function renderHistory(logs) {
-            document.getElementById('history-tbody').innerHTML = logs.map((log, index) => {
-                let diffMileageText = "-";
-                if (log.type === "還車") {
-                    let matchingCheckout = logs.slice(index + 1).find(l => l.plate === log.plate && l.type === "出車");
-                    if (matchingCheckout) {
-                        let diff = parseInt(log.mileage) - parseInt(matchingCheckout.mileage);
-                        if (!isNaN(diff)) diffMileageText = `<span class="text-emerald-600 font-bold">${diff} km</span>`;
-                    }
-                }
-                return `
-                    <tr class="hover:bg-slate-50/60 text-xs">
-                        <td class="p-3 font-bold">${log.plate}<br><span class="text-[10px] text-slate-400 font-normal">${log.name.split('(')[0]}</span></td>
-                        <td class="p-3"><span class="px-1.5 py-0.5 rounded font-medium ${log.type==='出車'?'bg-rose-50 text-rose-600':'bg-emerald-50 text-emerald-600'}">${log.type}</span><br><span class="text-slate-700 font-medium">${log.user}</span></td>
-                        <td class="p-3 text-[11px] text-slate-500">${log.time}<br>儀表: <span class="font-mono font-medium text-slate-700">${log.mileage} km</span></td>
-                        <td class="p-3 font-mono">${diffMileageText}</td>
-                        <td class="p-3 text-slate-600">${log.refuel || "-"}</td>
-                        <td class="p-3 text-center">${log.type==='還車'?`<button onclick="viewPhotos('${log.id}')" class="text-xs text-indigo-600 font-semibold underline cursor-pointer">👀 檢視影像</button>`:'-'}</td>
-                    </tr>
-                `;
-            }).join('');
-        }
-
-        function renderMaintenances(maintenances) {
-            const tbody = document.getElementById('maint-tbody');
-            if (!maintenances || maintenances.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-slate-400 italic">目前尚無任何車輛維修保養登記紀錄</td></tr>`;
-                return;
-            }
-            tbody.innerHTML = maintenances.map(m => `
-                <tr class="hover:bg-amber-50/40 text-xs">
-                    <td class="p-3 font-mono text-slate-600">${m.date}</td>
-                    <td class="p-3 font-bold text-slate-700">${m.plate}</td>
-                    <td class="p-3 font-mono text-slate-600">${m.mileage} km</td>
-                    <td class="p-3 text-slate-700 max-w-xs break-words">${m.detail}</td>
-                    <td class="p-3 text-right font-mono font-bold text-amber-700">$${Number(m.cost).toLocaleString()}</td>
-                </tr>
-            `).join('');
-        }
-
-        async function fetchMaintenancesDirectly() {
-            try {
-                let res = await fetch(API_URL, { method: "POST", body: JSON.stringify({ action: "get_status" }) });
-                let data = await res.json();
-                if (data.maintenances) renderMaintenances(data.maintenances);
-            } catch(e) { console.error(e); }
-        }
-
-        function toggleMaintPanel() {
-            const panel = document.getElementById('maint-panel-content');
-            const btn = document.getElementById('maint-toggle-btn');
-            if (panel.classList.contains('hidden')) {
-                panel.classList.remove('hidden');
-                btn.innerText = "收起明細 ↑";
-                fetchMaintenancesDirectly();
-            } else {
-                panel.classList.add('hidden');
-                btn.innerText = "展開明細 ↓";
-            }
-        }
-
-        function openMaintenanceModal() {
-            document.getElementById('maint-date').value = new Date().toISOString().split('T')[0];
-            document.getElementById('maint-mileage').value = '';
-            document.getElementById('maint-detail').value = '';
-            document.getElementById('maint-cost').value = '';
-            openModal('maint-modal');
-        }
-
-        async function submitMaintenance() {
-            let plate = document.getElementById('maint-plate').value;
-            let date = document.getElementById('maint-date').value;
-            let mileage = document.getElementById('maint-mileage').value.trim();
-            let detail = document.getElementById('maint-detail').value.trim();
-            let cost = document.getElementById('maint-cost').value.trim();
-
-            if (!date || !mileage || !detail || !cost) return alert('所有保養欄位皆為必填項目！');
-            closeModal('maint-modal');
-            document.getElementById('car-container').classList.add('hidden');
-            document.getElementById('loading-hint').classList.remove('hidden');
-
-            await fetch(API_URL, { method: "POST", body: JSON.stringify({
-                action: "add_maintenance", plate: plate, date: date, mileage: mileage, detail: detail, cost: cost
-            })});
-            await fetchStatus();
-            alert('🛠️ 維修保養紀錄已成功同步存入雲端！');
-        }
-
-        function actionBtn(plate) {
-            let car = globalCars[plate];
-            if(car.status !== "出車使用中") {
-                document.getElementById('checkout-plate').value = plate;
-                document.getElementById('checkout-carname').value = car.name;
-                document.getElementById('checkout-title').innerText = `【出車】${car.name}`;
-                document.getElementById('checkout-user').value = '';
-                document.getElementById('checkout-mileage').value = '';
-                openModal('checkout-modal');
-            } else {
-                document.getElementById('return-plate').value = plate;
-                document.getElementById('return-carname').value = car.name;
-                document.getElementById('return-user').value = car.user;
-                document.getElementById('return-title').innerText = `【還車登記】${car.name}`;
-                document.getElementById('return-mileage').value = '';
-                document.getElementById('return-notes').value = '無異常。';
-                ['front','back','left','right'].forEach(s => {
-                    document.getElementById(`prev-${s}`).classList.add('hidden');
-                    currentImages[s] = null;
-                });
-                openModal('return-modal');
-            }
-        }
-
-        async function submitCheckout() {
-            let plate = document.getElementById('checkout-plate').value;
-            let name = document.getElementById('checkout-carname').value;
-            let user = document.getElementById('checkout-user').value;
-            let mileage = document.getElementById('checkout-mileage').value.trim();
-            if(!user || !mileage) return alert('請選取姓名並填寫出發里程！');
-
-            closeModal('checkout-modal');
-            document.getElementById('car-container').classList.add('hidden');
-            document.getElementById('loading-hint').classList.remove('hidden');
-
-            await fetch(API_URL, { method:"POST", body: JSON.stringify({
-                action: "checkout", plate: plate, name: name, user: user, mileage: mileage,
-                time: new Date().toLocaleString('zh-TW',{hour12:false})
-            })});
-            fetchStatus();
-        }
-
-        function compressImg(input, slot) {
-            let file = input.files[0];
-            if(!file) return;
-            if (!file.type.startsWith('image/')) {
-                alert('請選取正確的圖片檔案格式！');
-                return;
-            }
-            let reader = new FileReader();
-            reader.onload = function(e) {
-                let img = new Image();
-                img.src = e.target.result;
-                img.onload = function() {
-                    let canvas = document.createElement('canvas');
-                    let ctx = canvas.getContext('2d');
-                    let max_w = 400; 
-                    let scale = max_w / img.width;
-                    canvas.width = max_w;
-                    canvas.height = img.height * scale;
-                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                    
-                    let base64 = canvas.toDataURL('image/jpeg', 0.6); 
-                    currentImages[slot] = base64;
-                    let p = document.getElementById(`prev-${slot}`);
-                    p.style.backgroundImage = `url('${base64}')`;
-                    p.classList.remove('hidden');
-                }
-            }
-            reader.readAsDataURL(file);
-        }
-
-        async function submitReturn() {
-            let plate = document.getElementById('return-plate').value;
-            let name = document.getElementById('return-carname').value;
-            let user = document.getElementById('return-user').value;
-            let mileage = document.getElementById('return-mileage').value.trim();
-            let refuel = document.getElementById('return-refuel').value;
-            let notes = document.getElementById('return-notes').value.trim();
-
-            if(!mileage) return alert('請輸入還車里程！');
-            
-            let currentCar = globalCars[plate];
-            let startMileage = parseInt(currentCar.mileage);
-            let endMileage = parseInt(mileage);
-
-            if (isNaN(startMileage)) { startMileage = 0; }
-
-            if (endMileage <= startMileage) {
-                return alert(`⚠️ 里程填寫錯誤！\n還車里程 (${endMileage} km) 必須大於出發時的起始里程 (${startMileage} km)。`);
-            }
-
-            // 🛠️ 修正點：移除了照片必須存在的強制 if 檢查，直接封裝送出
-            let drivenDistance = endMileage - startMileage;
-
-            closeModal('return-modal');
-            document.getElementById('car-container').classList.add('hidden');
-            document.getElementById('loading-hint').classList.remove('hidden');
-            
-            await fetch(API_URL, { method:"POST", body: JSON.stringify({
-                action: "return", plate: plate, name: name, user: user, mileage: mileage,
-                refuel: refuel, notes: notes||"無異常", images: currentImages,
-                time: new Date().toLocaleString('zh-TW',{hour12:false})
-            })});
-            
-            await fetchStatus();
-            alert(`🎉 還車成功！\n駕駛同仁: ${user}\n本次行駛里程共計：${drivenDistance} 公里。\n辛苦了！`);
-        }
-
-        async function viewPhotos(logId) {
-            openModal('photo-modal');
-            document.getElementById('photo-loading').classList.remove('hidden');
-            document.getElementById('photo-grid').classList.add('hidden');
-            
-            let res = await fetch(API_URL, { method:"POST", body: JSON.stringify({ action:"get_photos", logId: logId }) });
-            let data = await res.json();
-            
-            // 🛠️ 修正點：如果後台發現這筆還車紀錄當時根本沒給照片，貼心提示使用者
-            if(data.images && data.images.front) {
-                ['front','back','left','right'].forEach(s => {
-                    document.getElementById(`view-${s}`).style.backgroundImage = `url('${data.images[s]}')`;
-                });
-                document.getElementById('photo-loading').classList.add("hidden");
-                document.getElementById('photo-grid').classList.remove('hidden');
-            } else {
-                document.getElementById('photo-loading').innerText = "💡 駕駛同仁在此次還車時，未上傳任何外觀照片。";
-            }
-        }
-
-        function openModal(id) { document.getElementById(id).classList.remove('hidden
+  // 處理還車登記
+  if (p.action === "return") {
+    var imgJson = JSON.stringify(p.images);
+    logSheet.appendRow(
