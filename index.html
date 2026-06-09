@@ -1,77 +1,131 @@
-function doPost(e) {
-  var p = JSON.parse(e.postData.contents);
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  
-  var logSheet = ss.getSheetByName("出車紀錄") || ss.insertSheet("出車紀錄");
-  var carSheet = ss.getSheetByName("車輛狀態") || ss.insertSheet("車輛狀態");
-  var maintSheet = ss.getSheetByName("保養紀錄") || ss.insertSheet("保養紀錄");
-  
-  if (logSheet.getLastRow() === 0) {
-    logSheet.appendRow(["紀錄編號", "動作", "車牌號碼", "車輛名稱", "駕駛姓名", "時間", "儀表里程", "補給加油", "車損異常回報", "照片資料(JSON)"]);
-  }
-  if (carSheet.getLastRow() === 0) {
-    carSheet.appendRow(["車牌號碼", "車輛名稱", "目前狀態", "目前駕駛", "出車時間", "出車里程"]);
-    carSheet.appendRow(["ABC-1234", "公司公務車(房車)", "廠內空閒中", "-", "-", "-"]);
-    carSheet.appendRow(["XYZ-5678", "載貨發財車(貨車)", "廠內空閒中", "-", "-", "-"]);
-  }
-  if (maintSheet.getLastRow() === 0) {
-    maintSheet.appendRow(["保養日期", "車牌號碼", "保養里程", "維修保養明細項目", "費用金額"]);
-  }
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>日商泰道公司車輛管理系統</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style>
+        body { font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800">
 
-  // ⚡ 核心優化：只撈取車輛當前狀態，追求毫秒級無感回傳
-  if (p.action === "get_status") {
-    var data = carSheet.getDataRange().getValues();
-    var cars = {};
-    for (var i = 1; i < data.length; i++) {
-      cars[data[i][0]] = {
-        plate: data[i][0], name: data[i][1],
-        status: data[i][2], user: data[i][3], time: data[i][4], mileage: data[i][5]
-      };
-    }
-    return ContentService.createTextOutput(JSON.stringify({cars: cars})).setMimeType(ContentService.MimeType.JSON);
-  }
+    <nav class="bg-indigo-900 text-white shadow-md">
+        <div class="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">
+            <h1 class="text-lg font-bold tracking-wide">日商泰道公司車輛管理系統</h1>
+            <button onclick="fetchStatus()" class="text-xs bg-indigo-700 px-3 py-1.5 rounded-lg cursor-pointer">🔄 重新整理</button>
+        </div>
+    </nav>
 
-  // ⚡ 分流優化 1：同仁點擊時才單獨撈取前 10 筆歷史紀錄
-  if (p.action === "get_logs") {
-    var logs = [];
-    var logData = logSheet.getDataRange().getValues();
-    // 略過最後一欄巨大的照片 JSON，加快傳輸速度
-    for (var j = Math.max(1, logData.length - 10); j < logData.length; j++) {
-      logs.push({
-        id: logData[j][0], type: logData[j][1], plate: logData[j][2], name: logData[j][3],
-        user: logData[j][4], time: logData[j][5], mileage: logData[j][6], refuel: logData[j][7], notes: logData[j][8]
-      });
-    }
-    return ContentService.createTextOutput(JSON.stringify({logs: logs.reverse()})).setMimeType(ContentService.MimeType.JSON);
-  }
+    <main class="max-w-4xl mx-auto px-4 py-6 space-y-8">
+        
+        <div id="loading-hint" class="text-center py-8 font-medium text-slate-500">正在與雲端資料庫同步中...</div>
+        <div id="car-container" class="grid grid-cols-1 md:grid-cols-2 gap-6 hidden"></div>
 
-  // ⚡ 分流優化 2：行政點擊時才單獨撈取保養明細
-  if (p.action === "get_maintenances") {
-    var maintenances = [];
-    var maintData = maintSheet.getDataRange().getValues();
-    for (var k = Math.max(1, maintData.length - 20); k < maintData.length; k++) {
-      maintenances.push({
-        date: Utilities.formatDate(new Date(maintData[k][0]), "GMT+8", "yyyy-MM-dd"),
-        plate: maintData[k][1], mileage: maintData[k][2], detail: maintData[k][3], cost: maintData[k][4]
-      });
-    }
-    return ContentService.createTextOutput(JSON.stringify({maintenances: maintenances.reverse()})).setMimeType(ContentService.MimeType.JSON);
-  }
+        <section class="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
+            <div class="p-4 border-b border-slate-100 flex justify-between items-center">
+                <h3 class="font-bold text-slate-700">最新調度動態 (前10筆)</h3>
+                <button onclick="toggleLogsPanel()" id="logs-toggle-btn" class="text-xs text-indigo-600 font-semibold hover:underline cursor-pointer">展開明細 ↓</button>
+            </div>
+            <div id="logs-panel-content" class="overflow-x-auto hidden">
+                <table class="w-full text-left text-sm">
+                    <thead>
+                        <tr class="bg-slate-50 text-slate-500 text-xs border-b border-slate-200">
+                            <th class="p-3">車輛</th>
+                            <th class="p-3">人員/動作</th>
+                            <th class="p-3">時間/里程</th>
+                            <th class="p-3">行駛里程</th>
+                            <th class="p-3">自主加油</th>
+                            <th class="p-3 text-center">外觀存證</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-tbody" class="divide-y divide-slate-100">
+                        <tr><td colspan="6" class="p-4 text-center text-slate-400 italic">正在載入歷史明細...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
 
-  // 處理出車登記
-  if (p.action === "checkout") {
-    logSheet.appendRow([Date.now(), "出車", p.plate, p.name, p.user, p.time, p.mileage, "-", "-", ""]);
-    var rows = carSheet.getDataRange().getValues();
-    for (var r = 1; r < rows.length; r++) {
-      if (rows[r][0] === p.plate) {
-        carSheet.getRange(r+1, 3, 1, 4).setValues([["出車使用中", p.user, p.time, p.mileage]]);
-        break;
-      }
-    }
-    return ContentService.createTextOutput(JSON.stringify({success: true})).setMimeType(ContentService.MimeType.JSON);
-  }
+    <div id="checkout-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <h3 id="checkout-title" class="text-lg font-bold mb-4">登記出車</h3>
+            <div class="space-y-4">
+                <input type="hidden" id="checkout-plate"><input type="hidden" id="checkout-carname">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">駕駛同仁姓名 *</label>
+                    <select id="checkout-user" class="w-full p-2.5 bg-white border rounded-xl text-sm focus:outline-indigo-600">
+                        <option value="">-- 請選擇您的姓名 --</option>
+                        <option value="KAI">KAI</option>
+                        <option value="AF">AF</option>
+                        <option value="Julia">Julia</option>
+                        <option value="Stacey">Stacey</option>
+                        <option value="Fay">Fay</option>
+                        <option value="Sam">Sam</option>
+                        <option value="Iron">Iron</option>
+                        <option value="Ellie">Ellie</option>
+                        <option value="Sherry">Sherry</option>
+                        <option value="Monisha">Monisha</option>
+                        <option value="Dennis">Dennis</option>
+                        <option value="Steve">Steve</option>
+                    </select>
+                </div>
+                <div><label class="block text-xs font-bold text-slate-600 mb-1">出發里程數 (km) *</label><input type="number" id="checkout-mileage" class="w-full p-2 border rounded-xl text-sm font-mono focus:outline-indigo-600"></div>
+            </div>
+            <div class="mt-6 flex justify-end space-x-2"><button onclick="closeModal('checkout-modal')" class="px-4 py-2 text-sm text-slate-500 cursor-pointer">取消</button><button onclick="submitCheckout()" class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-xl cursor-pointer">確認出車</button></div>
+        </div>
+    </div>
 
-  // 處理還車登記
-  if (p.action === "return") {
-    var imgJson = JSON.stringify(p.images);
-    logSheet.appendRow(
+    <div id="return-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl my-8 p-6 space-y-4">
+            <h3 id="return-title" class="text-lg font-bold text-emerald-800">車輛歸還登記</h3>
+            <input type="hidden" id="return-plate"><input type="hidden" id="return-carname"><input type="hidden" id="return-user">
+            
+            <div class="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border">
+                <div><label class="block text-xs font-bold text-slate-600 mb-1">還車總里程 (km) *</label><input type="number" id="return-mileage" class="w-full p-2 bg-white border rounded-xl text-sm font-mono focus:outline-emerald-600"></div>
+                <div><label class="block text-xs font-bold text-slate-600 mb-1">補給加油</label><select id="return-refuel" class="w-full p-2 bg-white border rounded-xl text-sm focus:outline-emerald-600"><option value="否">無</option><option value="是">有，已自行墊付</option></select></div>
+            </div>
+
+            <div>
+                <label class="block text-xs font-bold text-slate-700 mb-2">車身四面照片（選填，如有新車損建議拍照存證）</label>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div class="border rounded-xl p-2 text-center bg-slate-50 relative min-h-[90px] flex flex-col justify-center items-center overflow-hidden">
+                        <span class="text-[11px] text-slate-500 mb-1">1.車頭前方</span>
+                        <div id="prev-front" class="absolute inset-0 bg-cover bg-center rounded-xl hidden"></div>
+                        <label class="cursor-pointer bg-white border px-2 py-1 text-xs rounded-md shadow-xs z-10">選取/拍攝<input type="file" class="hidden" onchange="compressImg(this, 'front')"></label>
+                    </div>
+                    <div class="border rounded-xl p-2 text-center bg-slate-50 relative min-h-[90px] flex flex-col justify-center items-center overflow-hidden">
+                        <span class="text-[11px] text-slate-500 mb-1">2.車尾後方</span>
+                        <div id="prev-back" class="absolute inset-0 bg-cover bg-center rounded-xl hidden"></div>
+                        <label class="cursor-pointer bg-white border px-2 py-1 text-xs rounded-md shadow-xs z-10">選取/拍攝<input type="file" class="hidden" onchange="compressImg(this, 'back')"></label>
+                    </div>
+                    <div class="border rounded-xl p-2 text-center bg-slate-50 relative min-h-[90px] flex flex-col justify-center items-center overflow-hidden">
+                        <span class="text-[11px] text-slate-500 mb-1">3.車身左側</span>
+                        <div id="prev-left" class="absolute inset-0 bg-cover bg-center rounded-xl hidden"></div>
+                        <label class="cursor-pointer bg-white border px-2 py-1 text-xs rounded-md shadow-xs z-10">選取/拍攝<input type="file" class="hidden" onchange="compressImg(this, 'left')"></label>
+                    </div>
+                    <div class="border rounded-xl p-2 text-center bg-slate-50 relative min-h-[90px] flex flex-col justify-center items-center overflow-hidden">
+                        <span class="text-[11px] text-slate-500 mb-1">4.車身右側</span>
+                        <div id="prev-right" class="absolute inset-0 bg-cover bg-center rounded-xl hidden"></div>
+                        <label class="cursor-pointer bg-white border px-2 py-1 text-xs rounded-md shadow-xs z-10">選取/拍攝<input type="file" class="hidden" onchange="compressImg(this, 'right')"></label>
+                    </div>
+                </div>
+            </div>
+
+            <div><label class="block text-xs font-bold text-slate-600 mb-1">外觀異狀說明</label><textarea id="return-notes" rows="2" placeholder="若無請填寫「無」" class="w-full p-2 border rounded-xl text-sm focus:outline-emerald-600"></textarea></div>
+            <div class="flex justify-end space-x-2"><button onclick="closeModal('return-modal')" class="px-4 py-2 text-sm text-slate-500 cursor-pointer">取消</button><button onclick="submitReturn()" class="px-4 py-2 text-sm bg-emerald-600 text-white rounded-xl cursor-pointer">確認完整歸還</button></div>
+        </div>
+    </div>
+
+    <div id="photo-modal" class="hidden fixed inset-0 bg-slate-900/80 flex items-center justify-center p-4 z-60">
+        <div class="bg-white rounded-2xl p-4 max-w-lg w-full space-y-4">
+            <h4 class="font-bold text-slate-700">歸還存證照片瀏覽</h4>
+            <div id="photo-loading" class="text-center py-6 text-slate-400">正在從雲端下載影像...</div>
+            <div id="photo-grid" class="grid grid-cols-2 gap-2 hidden">
+                <div class="aspect-square bg-slate-100 bg-cover bg-center rounded-lg" id="view-front"></div>
+                <div class="aspect-square bg-slate-100 bg-cover bg-center rounded-lg" id="view-back"></div>
+                <div class="aspect-square bg-slate-100 bg-cover bg-center rounded-lg" id="view-left"></div>
+                <div class="aspect-square bg-slate-100 bg-cover bg-center rounded-lg" id="view-right"></div>
+            </div>
+            <div class="text-right"><button onclick="closeModal('photo-modal')" class="bg-slate-800 text-white px-4 py-1.5 rounded-xl text-sm cursor
