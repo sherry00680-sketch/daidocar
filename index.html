@@ -20,11 +20,9 @@
 
     <main class="max-w-4xl mx-auto px-4 py-6 space-y-8">
         
-        <!-- 車輛卡片區 -->
         <div id="loading-hint" class="text-center py-8 font-medium text-slate-500">正在與雲端資料庫同步中...</div>
         <div id="car-container" class="grid grid-cols-1 md:grid-cols-2 gap-6 hidden"></div>
 
-        <!-- 歷史紀錄 -->
         <section class="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
             <div class="p-4 border-b border-slate-100 flex justify-between items-center">
                 <h3 class="font-bold text-slate-700">最新調度動態 (前10筆)</h3>
@@ -50,7 +48,6 @@
         </section>
     </main>
 
-    <!-- 出車彈窗 -->
     <div id="checkout-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
             <h3 id="checkout-title" class="text-lg font-bold mb-4">登記出車</h3>
@@ -80,7 +77,6 @@
         </div>
     </div>
 
-    <!-- 還車拍照彈窗 -->
     <div id="return-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl my-8 p-6 space-y-4">
             <h3 id="return-title" class="text-lg font-bold text-emerald-800">車輛歸還登記</h3>
@@ -122,7 +118,6 @@
         </div>
     </div>
 
-    <!-- 檢視照片大圖彈窗 -->
     <div id="photo-modal" class="hidden fixed inset-0 bg-slate-900/80 flex items-center justify-center p-4 z-60">
         <div class="bg-white rounded-2xl p-4 max-w-lg w-full space-y-4">
             <h4 class="font-bold text-slate-700">歸還存證照片瀏覽</h4>
@@ -139,8 +134,8 @@
 
 
     <script>
-        // 🛠️ 已成功更換為你提供的專屬 Apps Script 網址
-        const API_URL = "https://script.google.com/macros/s/AKfycbz4cJjh7hdcIVDXapA23E7YlpoSEHVqiktSBzBxLx8YNM5fXBomw19V1DVwPyl4Hlnw/exec"; 
+        // 🔗 已成功更新為最新的後端 Apps Script 網址
+        const API_URL = "https://script.google.com/macros/s/AKfycbx3rv4xqh89l17MvAZ8GjWXABRVu53NU40D_HT1fXi-2yb5-nbSwPgZf-B6VOYd3s-2/exec"; 
 
         let globalCars = {};
         let currentImages = { front:null, back:null, left:null, right:null };
@@ -178,209 +173,4 @@
                     badgeClass = "bg-rose-50 text-rose-600";
                 } else if (isLocked) {
                     borderClass = "border-amber-500";
-                    badgeClass = "bg-amber-50 text-amber-600";
-                }
-
-                let buttonHtml = "";
-                if (isOut) {
-                    buttonHtml = `<button onclick="actionBtn('${car.plate}')" class="w-full py-2.5 rounded-xl text-sm font-medium text-white shadow-xs cursor-pointer bg-slate-800 hover:bg-slate-900">返廠登記：進行歸還流程</button>`;
-                } else if (isLocked) {
-                    buttonHtml = `<button disabled class="w-full py-2.5 rounded-xl text-sm font-medium text-slate-400 bg-slate-200 cursor-not-allowed">車輛維修保養中 • 暫停預約</button>`;
-                } else {
-                    buttonHtml = `<button onclick="actionBtn('${car.plate}')" class="w-full py-2.5 rounded-xl text-sm font-medium text-white shadow-xs cursor-pointer bg-indigo-600 hover:bg-indigo-700">同仁出車登記</button>`;
-                }
-
-                return `
-                    <div class="bg-white rounded-2xl shadow-xs border-t-4 ${borderClass} p-5">
-                        <div class="flex justify-between items-start">
-                            <div><h3 class="font-bold text-lg">${car.name}</h3><p class="text-xs font-mono text-slate-400 mt-0.5">車牌：${car.plate}</p></div>
-                            <span class="text-xs px-2.5 py-0.5 rounded-full font-medium ${badgeClass}">${car.status}</span>
-                        </div>
-                        <div class="my-4 bg-slate-50 p-3 rounded-xl text-xs space-y-1 text-slate-600">
-                            <div>駕駛同仁：<span class="font-medium text-slate-800">${car.user}</span></div>
-                            <div>變更時間：<span>${car.time}</span></div>
-                            <div>當前儀表：<span>${car.mileage !== '-' ? car.mileage + ' km' : '-'}</span></div>
-                        </div>
-                        ${buttonHtml}
-                    </div>
-                `;
-            }).join('');
-        }
-
-        async function fetchLogs() {
-            document.getElementById('history-tbody').innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-400 italic">從雲端加載中...</td></tr>`;
-            try {
-                let res = await fetch(API_URL, { method: "POST", body: JSON.stringify({ action: "get_logs" }) });
-                let data = await res.json();
-                cachedLogs = data.logs;
-                
-                document.getElementById('history-tbody').innerHTML = data.logs.map((log, index) => {
-                    let diffMileageText = "-";
-                    if (log.type === "還車") {
-                        let matchingCheckout = data.logs.slice(index + 1).find(l => l.plate === log.plate && l.type === "出車");
-                        if (matchingCheckout) {
-                            let diff = parseInt(log.mileage) - parseInt(matchingCheckout.mileage);
-                            if (!isNaN(diff)) diffMileageText = `<span class="text-emerald-600 font-bold">${diff} km</span>`;
-                        }
-                    }
-                    return `
-                        <tr class="hover:bg-slate-50/60 text-xs">
-                            <td class="p-3 font-bold">${log.plate}<br><span class="text-[10px] text-slate-400 font-normal">${log.name.split('(')[0]}</span></td>
-                            <td class="p-3"><span class="px-1.5 py-0.5 rounded font-medium ${log.type==='出車'?'bg-rose-50 text-rose-600':'bg-emerald-50 text-emerald-600'}">${log.type}</span><br><span class="text-slate-700 font-medium">${log.user}</span></td>
-                            <td class="p-3 text-[11px] text-slate-500">${log.time}<br>儀表: <span class="font-mono font-medium text-slate-700">${log.mileage} km</span></td>
-                            <td class="p-3 font-mono">${diffMileageText}</td>
-                            <td class="p-3 text-slate-600">${log.refuel || "-"}</td>
-                            <td class="p-3 text-center"><button onclick="viewPhotos('${log.id}')" class="text-xs text-indigo-600 font-semibold underline cursor-pointer">${log.type==='還車'?'👀 檢視影像':'-'}</button></td>
-                        </tr>
-                    `;
-                }).join('');
-            } catch(e) { document.getElementById('history-tbody').innerHTML = `<tr><td colspan="6" class="p-4 text-center text-rose-500">加載失敗，請重試。</td></tr>`; }
-        }
-
-        function toggleLogsPanel() {
-            const panel = document.getElementById('logs-panel-content');
-            const btn = document.getElementById('logs-toggle-btn');
-            if (panel.classList.contains('hidden')) {
-                panel.classList.remove('hidden');
-                btn.innerText = "收起明細 ↑";
-                fetchLogs();
-            } else {
-                panel.classList.add('hidden');
-                btn.innerText = "展開明細 ↓";
-            }
-        }
-
-        function actionBtn(plate) {
-            let car = globalCars[plate];
-            if(car.status !== "出車使用中") {
-                document.getElementById('checkout-plate').value = plate;
-                document.getElementById('checkout-carname').value = car.name;
-                document.getElementById('checkout-title').innerText = `【出車】${car.name}`;
-                document.getElementById('checkout-user').value = '';
-                document.getElementById('checkout-mileage').value = '';
-                openModal('checkout-modal');
-            } else {
-                document.getElementById('return-plate').value = plate;
-                document.getElementById('return-carname').value = car.name;
-                document.getElementById('return-user').value = car.user;
-                document.getElementById('return-title').innerText = `【還車登記】${car.name}`;
-                document.getElementById('return-mileage').value = '';
-                document.getElementById('return-notes').value = '無異常。';
-                ['front','back','left','right'].forEach(s => {
-                    document.getElementById(`prev-${s}`).classList.add('hidden');
-                    currentImages[s] = null;
-                });
-                openModal('return-modal');
-            }
-        }
-
-        async function submitCheckout() {
-            let plate = document.getElementById('checkout-plate').value;
-            let name = document.getElementById('checkout-carname').value;
-            let user = document.getElementById('checkout-user').value;
-            let mileage = document.getElementById('checkout-mileage').value.trim();
-            if(!user || !mileage) return alert('請選取姓名並填寫出發里程！');
-
-            closeModal('checkout-modal');
-            document.getElementById('car-container').classList.add('hidden');
-            document.getElementById('loading-hint').classList.remove('hidden');
-
-            await fetch(API_URL, { method:"POST", body: JSON.stringify({
-                action: "checkout", plate: plate, name: name, user: user, mileage: mileage,
-                time: new Date().toLocaleString('zh-TW',{hour12:false})
-            })});
-            fetchStatus();
-        }
-
-        function compressImg(input, slot) {
-            let file = input.files[0];
-            if(!file) return;
-            if (!file.type.startsWith('image/')) {
-                alert('請選取正確的圖片檔案格式！');
-                return;
-            }
-            let reader = new FileReader();
-            reader.onload = function(e) {
-                let img = new Image();
-                img.src = e.target.result;
-                img.onload = function() {
-                    let canvas = document.createElement('canvas');
-                    let ctx = canvas.getContext('2d');
-                    let max_w = 400; 
-                    let scale = max_w / img.width;
-                    canvas.width = max_w;
-                    canvas.height = img.height * scale;
-                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                    
-                    let base64 = canvas.toDataURL('image/jpeg', 0.6); 
-                    currentImages[slot] = base64;
-                    let p = document.getElementById(`prev-${slot}`);
-                    p.style.backgroundImage = `url('${base64}')`;
-                    p.classList.remove('hidden');
-                }
-            }
-            reader.readAsDataURL(file);
-        }
-
-        async function submitReturn() {
-            let plate = document.getElementById('return-plate').value;
-            let name = document.getElementById('return-carname').value;
-            let user = document.getElementById('return-user').value;
-            let mileage = document.getElementById('return-mileage').value.trim();
-            let refuel = document.getElementById('return-refuel').value;
-            let notes = document.getElementById('return-notes').value.trim();
-
-            if(!mileage) return alert('請輸入還車里程！');
-            
-            let currentCar = globalCars[plate];
-            let startMileage = parseInt(currentCar.mileage);
-            let endMileage = parseInt(mileage);
-
-            if (isNaN(startMileage)) { startMileage = 0; }
-
-            if (endMileage <= startMileage) {
-                return alert(`⚠️ 里程填寫錯誤！\n還車里程 (${endMileage} km) 必須大於出發時的起始里程 (${startMileage} km)。`);
-            }
-
-            let drivenDistance = endMileage - startMileage;
-
-            closeModal('return-modal');
-            document.getElementById('car-container').classList.add('hidden');
-            document.getElementById('loading-hint').classList.remove('hidden');
-            
-            await fetch(API_URL, { method:"POST", body: JSON.stringify({
-                action: "return", plate: plate, name: name, user: user, mileage: mileage,
-                refuel: refuel, notes: notes||"無異常", images: currentImages,
-                time: new Date().toLocaleString('zh-TW',{hour12:false})
-            })});
-            
-            await fetchStatus();
-            alert(`🎉 還車成功！\n駕駛同仁: ${user}\n本次行駛里程共計：${drivenDistance} 公里。\n辛苦了！`);
-        }
-
-        async function viewPhotos(logId) {
-            openModal('photo-modal');
-            document.getElementById('photo-loading').classList.remove('hidden');
-            document.getElementById('photo-grid').classList.add('hidden');
-            
-            let res = await fetch(API_URL, { method:"POST", body: JSON.stringify({ action:"get_photos", logId: logId }) });
-            let data = await res.json();
-            
-            if(data.images && data.images.front) {
-                ['front','back','left','right'].forEach(s => {
-                    document.getElementById(`view-${s}`).style.backgroundImage = `url('${data.images[s]}')`;
-                });
-                document.getElementById('photo-loading').classList.add("hidden");
-                document.getElementById('photo-grid').classList.remove('hidden');
-            } else {
-                document.getElementById('photo-loading').innerText = "💡 駕駛同仁在此次還車時，未上傳任何外觀照片。";
-            }
-        }
-
-        function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
-        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
-        
-        window.onload = fetchStatus;
-    </script>
-</body>
-</html>
+                    badgeClass = "bg-
